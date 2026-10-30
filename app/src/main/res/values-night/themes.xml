@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 深色模式的系统壳：底用深色 Material 主题，导航栏也要换成浅色图标
+         （浅色图标配深底才对；false 表示不启用「浅色导航栏」即深底浅图标）。 -->
+    <style name="Theme.WeKnora" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowDisablePreview">true</item>
+        <item name="android:windowBackground">@color/window_bg</item>
+        <item name="android:statusBarColor">@color/sys_bar_top</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@color/sys_bar_bottom</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+</resources>

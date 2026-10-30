@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_background">#0D1117</color>
+
+    <!-- 系统栏颜色：必须与 Compose 侧 Theme.kt 的取值保持一致，
+         否则深紫顶栏上面会压着一条白色状态栏，一眼露馅。
+         values-night/colors.xml 里有对应的深色版本。 -->
+    <color name="sys_bar_top">#FF26215C</color>
+    <color name="sys_bar_bottom">#FFFFFFFF</color>
+    <color name="window_bg">#FFF7F5FB</color>
+</resources>

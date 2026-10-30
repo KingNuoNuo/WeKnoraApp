@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 深色模式下的系统栏：顶栏 #171334、页面底 #100E16，与 Theme.kt 的 DarkColors 对齐 -->
+    <color name="sys_bar_top">#FF171334</color>
+    <color name="sys_bar_bottom">#FF17151F</color>
+    <color name="window_bg">#FF100E16</color>
+</resources>

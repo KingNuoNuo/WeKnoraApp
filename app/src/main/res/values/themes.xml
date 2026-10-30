@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 纯 Compose 项目：主题由 Compose 侧 Theme.kt 控制，
+         这里只提供一个无 ActionBar 的系统壳主题。
+
+         statusBarColor / navigationBarColor 必须显式给：
+         Material.Light 的默认状态栏是纯黑，配上品牌深紫顶栏会像贴错了一块。
+         颜色定义在 values/colors.xml 与 values-night/colors.xml。 -->
+    <style name="Theme.WeKnora" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowDisablePreview">true</item>
+        <item name="android:windowBackground">@color/window_bg</item>
+        <item name="android:statusBarColor">@color/sys_bar_top</item>
+        <!-- 顶栏是深色，状态栏图标必须用浅色 -->
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@color/sys_bar_bottom</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+</resources>
