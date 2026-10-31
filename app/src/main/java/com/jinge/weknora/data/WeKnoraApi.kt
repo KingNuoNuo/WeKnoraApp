@@ -11,6 +11,8 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -43,7 +45,41 @@ class ApiException(message: String, val code: Int = 0) : Exception(message)
 data class ConnectionConfig(
     val baseUrl: String,
     val apiKey: String,
-    val tenantId: String = ""
+    val tenantId: String = "",
+    /** 账号登录拿到的 JWT。非空时优先用它鉴权，不再发 X-API-Key */
+    val token: String = ""
+)
+
+/* ---------------- 账号登录 ---------------- */
+
+@Serializable
+data class LoginTenant(val id: Long = 0, val name: String = "")
+
+@Serializable
+data class LoginUser(
+    val id: String = "",
+    val username: String = "",
+    val email: String = ""
+)
+
+/** POST /api/v1/auth/login 的扁平响应（不是 Envelope 包装） */
+@Serializable
+data class LoginResult(
+    val success: Boolean = false,
+    val message: String = "",
+    val token: String = "",
+    @SerialName("refresh_token") val refreshToken: String = "",
+    val user: LoginUser? = null,
+    @SerialName("active_tenant") val activeTenant: LoginTenant? = null
+)
+
+/** POST /api/v1/auth/refresh 的响应 */
+@Serializable
+data class RefreshResult(
+    val success: Boolean = false,
+    val message: String = "",
+    @SerialName("access_token") val accessToken: String = "",
+    @SerialName("refresh_token") val refreshToken: String = ""
 )
 
 /* ============================================================
@@ -109,18 +145,27 @@ class WeKnoraApi(private val cfg: ConnectionConfig) {
     private fun streamClient(): OkHttpClient = sharedStreamClient
 
     private fun authReq(path: String): Request.Builder {
-        val b = Request.Builder()
-            .url(base() + path)
-            .addHeader("X-API-Key", cfg.apiKey)
-            .addHeader("Authorization", "Bearer " + cfg.apiKey)
+        val b = Request.Builder().url(base() + path)
+        if (cfg.token.isNotBlank()) {
+            // 账号登录：JWT
+            b.addHeader("Authorization", "Bearer " + cfg.token)
+        } else {
+            // 兼容老的 API Key 配置
+            b.addHeader("X-API-Key", cfg.apiKey)
+            b.addHeader("Authorization", "Bearer " + cfg.apiKey)
+        }
         if (cfg.tenantId.isNotBlank()) b.addHeader("X-Tenant-ID", cfg.tenantId)
         return b
     }
 
-    /** 下载/预览走系统 DownloadManager 时也要带同样的鉴权头 */
+    /** 下载/预览/图片走同一套鉴权头 */
     fun authHeaders(): Map<String, String> = buildMap {
-        put("X-API-Key", cfg.apiKey)
-        put("Authorization", "Bearer " + cfg.apiKey)
+        if (cfg.token.isNotBlank()) {
+            put("Authorization", "Bearer " + cfg.token)
+        } else {
+            put("X-API-Key", cfg.apiKey)
+            put("Authorization", "Bearer " + cfg.apiKey)
+        }
         if (cfg.tenantId.isNotBlank()) put("X-Tenant-ID", cfg.tenantId)
     }
 
@@ -161,6 +206,67 @@ class WeKnoraApi(private val cfg: ConnectionConfig) {
     }
 
     /* ---------------- 连接 ---------------- */
+
+    /**
+     * 账号密码登录。
+     *
+     * 响应是扁平的 `{success, message, user, active_tenant, token, refresh_token}`，
+     * 不是 Envelope 包装，所以不能走 exec() 的泛型解析。
+     */
+    fun login(email: String, password: String): LoginResult {
+        val cleanEmail = normalizeEmail(email)
+        val req = Request.Builder()
+            .url(base() + "/api/v1/auth/login")
+            .post(jsonBody(buildJsonObject {
+                put("email", cleanEmail)
+                put("password", password)
+            }))
+            .build()
+        client().newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            val parsed = runCatching { JSON.decodeFromString<LoginResult>(raw) }.getOrNull()
+            if (!resp.isSuccessful || parsed == null || !parsed.success || parsed.token.isBlank()) {
+                val msg = when {
+                    // 400 = 参数校验失败。实测最常见的原因是中文输入法把邮箱里的
+                    // @ 打成了全角 ＠（"724788032＠qq.com"），服务端 email 校验直接拒。
+                    resp.code == 400 -> "账号格式不正确：请检查邮箱，@ 要用半角"
+                    resp.code == 401 -> "账号或密码不正确"
+                    else -> parsed?.message?.takeIf { it.isNotBlank() }
+                        ?: parseErrorMessage(raw, resp.code)
+                }
+                throw ApiException(msg, resp.code)
+            }
+            return parsed
+        }
+    }
+
+    /**
+     * 邮箱归一化：去掉首尾空白、全角空格、零宽字符，并把全角 `＠` 换成半角。
+     *
+     * 这不是洁癖：中文输入法（尤其九宫格）默认会输出全角 `＠`，
+     * 服务端的 email 校验只认 ASCII，整条登录就卡在 400 上，
+     * 而界面上看起来「邮箱明明是对的」。
+     */
+    private fun normalizeEmail(raw: String): String =
+        raw.trim()
+            .replace('＠', '@')
+            .replace('\u3000', ' ')
+            .filterNot { it.isWhitespace() || it == '\u200B' || it == '\uFEFF' }
+
+    fun refreshToken(refreshToken: String): RefreshResult {
+        val req = Request.Builder()
+            .url(base() + "/api/v1/auth/refresh")
+            .post(jsonBody(buildJsonObject { put("refreshToken", refreshToken) }))
+            .build()
+        client().newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            val parsed = runCatching { JSON.decodeFromString<RefreshResult>(raw) }.getOrNull()
+            if (!resp.isSuccessful || parsed == null || parsed.accessToken.isBlank()) {
+                throw ApiException(parsed?.message?.ifBlank { "登录已过期" } ?: "登录已过期", resp.code)
+            }
+            return parsed
+        }
+    }
 
     fun testConnection(): String {
         return try {
@@ -212,8 +318,44 @@ class WeKnoraApi(private val cfg: ConnectionConfig) {
             ).build()
         )
 
+    /** 某个文档的全部分块（用于按引用位置补图） */
+    fun listChunks(knowledgeId: String): List<JsonObject> {
+        client().newCall(authReq("/api/v1/chunks/$knowledgeId").get().build()).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            if (!resp.isSuccessful) throw ApiException(parseErrorMessage(raw, resp.code), resp.code)
+            val root = runCatching { JSON.parseToJsonElement(raw) as? JsonObject }.getOrNull()
+                ?: return emptyList()
+            val data = root["data"] as? JsonArray ?: return emptyList()
+            return data.mapNotNull { it as? JsonObject }
+        }
+    }
+
     fun deleteSession(sessionId: String) {
         exec<Unit>(authReq("/api/v1/sessions/$sessionId").delete().build())
+    }
+
+    /**
+     * 会话的历史消息。
+     *
+     * 不声明 @Serializable DTO：这个接口的 `knowledge_references` 在不同消息上
+     * 类型不一致（用户消息是字符串 `"[]"`，助手消息是数组），声明成任何单一类型
+     * 都会在另一类消息上抛 SerializationException。这里直接拿 JsonObject，
+     * 由调用方按字段取值，缺什么就跳过什么。
+     */
+    fun loadMessages(sessionId: String, limit: Int = 60): List<JsonObject> {
+        client().newCall(authReq("/api/v1/messages/$sessionId/load?limit=$limit").get().build()).execute()
+            .use { resp ->
+                val raw = resp.body?.string().orEmpty()
+                if (!resp.isSuccessful) throw ApiException(parseErrorMessage(raw, resp.code), resp.code)
+                val root = runCatching { JSON.parseToJsonElement(raw) as? JsonObject }.getOrNull()
+                    ?: return emptyList()
+                val data = when (val d = root["data"]) {
+                    is JsonArray -> d
+                    is JsonObject -> (d["messages"] as? JsonArray) ?: (d["items"] as? JsonArray)
+                    else -> null
+                } ?: return emptyList()
+                return data.mapNotNull { it as? JsonObject }
+            }
     }
 
     /* ---------------- 智能体 / 模型 ---------------- */
@@ -288,7 +430,7 @@ class WeKnoraApi(private val cfg: ConnectionConfig) {
     fun streamChat(
         sessionId: String,
         query: String,
-        kbId: String,
+        kbIds: List<String>,
         agentId: String = "",
         modelId: String = "",
         reasoningEffort: String = "",
@@ -303,8 +445,9 @@ class WeKnoraApi(private val cfg: ConnectionConfig) {
                 //
                 // 官方字段是复数 knowledge_base_ids（数组）；旧版本只认单数
                 // knowledge_base_id。两个都发，新旧服务端都能命中检索。
-                put("knowledge_base_ids", idsArray(listOf(kbId)))
-                put("knowledge_base_id", kbId)
+                // 「全部知识库」模式就是把这批 id 一起带上。
+                put("knowledge_base_ids", idsArray(kbIds))
+                put("knowledge_base_id", kbIds.first())
                 if (useAgent) {
                     put("agent_enabled", true)
                     put("agent_id", agentId)
@@ -316,9 +459,13 @@ class WeKnoraApi(private val cfg: ConnectionConfig) {
                 // 传字符串会 400：cannot unmarshal string into ... of type bool
                 put("web_search_enabled", webSearch)
             })
-            val path = if (useAgent) "/api/v1/agent-chat/$sessionId"
-                       else "/api/v1/knowledge-chat/$sessionId"
-            val req = authReq(path)
+        val path = if (useAgent) "/api/v1/agent-chat/$sessionId"
+                   else "/api/v1/knowledge-chat/$sessionId"
+            // 明确要 handle 模式：内容里保留 `resource://<handle>`，
+            // 由客户端带鉴权走 /files 代理取字节（实测 200）。
+            // 不要用 public —— public 会换成 `APP_EXTERNAL_URL/r/<token>` 的
+            // 临时链接，几分钟后就 404，历史消息里的图全变死链。
+            val req = authReq("$path?resource_urls=handle")
                 .post(body)
                 .addHeader("Accept", "text/event-stream")
                 .build()

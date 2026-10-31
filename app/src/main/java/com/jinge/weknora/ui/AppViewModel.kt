@@ -24,6 +24,7 @@ import com.jinge.weknora.data.KbStats
 import com.jinge.weknora.data.Knowledge
 import com.jinge.weknora.data.KnowledgeBase
 import com.jinge.weknora.data.ModelInfo
+import com.jinge.weknora.data.ReferenceParser
 import com.jinge.weknora.data.Session
 import com.jinge.weknora.data.SettingsStore
 import com.jinge.weknora.data.StreamFrame
@@ -74,6 +75,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private var api: WeKnoraApi? = null
     private var streamJob: Job? = null
 
+    /** 文档分块里的图片句柄 */
+    private val RESOURCE_HANDLE = Regex("""resource://[A-Za-z0-9_-]{6,}""")
+
     /** 会话懒创建，但并发调用会各建一个（多选附件踩过：一次建出 N 个会话） */
     private val sessionLock = Mutex()
 
@@ -84,6 +88,39 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var apiKeyInput by mutableStateOf(store.apiKey)
     /** 可选：仅平台级 API Key 需要，空间级 Key 留空 */
     var tenantIdInput by mutableStateOf(store.tenantId)
+
+    /* ---------------- 账号登录 ---------------- */
+    var emailInput by mutableStateOf(store.email)
+    var passwordInput by mutableStateOf("")
+    /** 已登录账号（设置页展示用） */
+    val accountEmail: String get() = store.email
+
+    /* ---------------- 更新 ---------------- */
+    /** 更新源（update.json）地址，设置页可改，默认指向仓库 raw 地址 */
+    var updateUrlInput by mutableStateOf(store.updateUrl)
+        private set
+
+    fun saveUpdateUrl(url: String) {
+        updateUrlInput = url.trim().ifBlank { com.jinge.weknora.data.UpdateChecker.DEFAULT_URL }
+        store.updateUrl = updateUrlInput
+    }
+
+    /**
+     * 图片/文件请求要带的鉴权头，和 API 请求保持一致。
+     *
+     * 账号登录用 Bearer token；老的 API Key 配置继续用 X-API-Key。
+     * 知识库正文里的图是 `resource://<handle>`，要经服务端 `/files` 代理取字节，
+     * 鉴权必须和接口一致。
+     */
+    fun authHeaders(): Map<String, String> = buildMap {
+        if (store.token.isNotBlank()) {
+            put("Authorization", "Bearer " + store.token)
+        } else if (store.apiKey.isNotBlank()) {
+            put("X-API-Key", store.apiKey)
+            put("Authorization", "Bearer " + store.apiKey)
+        }
+        if (store.tenantId.isNotBlank()) put("X-Tenant-ID", store.tenantId)
+    }
 
     /* ---------------- 通用反馈 ---------------- */
     var busy by mutableStateOf(false)
@@ -96,6 +133,28 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /* ---------------- 知识库 ---------------- */
     val knowledgeBases = mutableStateListOf<KnowledgeBase>()
     var currentKb by mutableStateOf<KnowledgeBase?>(null)
+
+    /**
+     * 检索范围是否是「全部知识库」。
+     *
+     * 默认就是全部：单人自建库通常按主题拆了好几个，问问题时并不想先挑库。
+     * 选具体库时才置 false。文档页需要具体库，在全部模式下会提示去选库。
+     */
+    var allKbsSelected by mutableStateOf(store.lastKbId == SettingsStore.ALL_KB)
+
+    /** 顶栏 / 空态显示用的库名 */
+    val kbDisplayName: String
+        get() = if (allKbsSelected) "全部知识库" else (currentKb?.name ?: "未选择知识库")
+
+    /** 本轮检索要带的库 id 列表 */
+    val chatKbIds: List<String>
+        get() = if (allKbsSelected) knowledgeBases.map { it.id }
+        else listOfNotNull(currentKb?.id)
+
+    /** 顶栏/空态展示的文档总数：全部模式 = 各库 knowledge_count 之和 */
+    val displayDocCount: Int
+        get() = if (allKbsSelected) knowledgeBases.sumOf { it.knowledgeCount }
+        else if (kbDocCount > 0) kbDocCount else docs.size
 
     /**
      * kbId → 文档统计快照（设置页每个库右侧那三列数字）。
@@ -114,11 +173,40 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val sessions = mutableStateListOf<Session>()
     var currentSessionId by mutableStateOf<String?>(null)
 
+    /* ---------------- 历史会话 ---------------- */
+    /** 跨知识库的会话列表（历史面板用） */
+    val historySessions = mutableStateListOf<Session>()
+    var historyLoading by mutableStateOf(false)
+
+    fun refreshHistory() {
+        viewModelScope.launch {
+            historyLoading = true
+            try {
+                val list = withContext(Dispatchers.IO) {
+                    apiNow().listAllSessions(page = 1, pageSize = 50).items
+                }
+                historySessions.clear()
+                historySessions.addAll(list)
+            } catch (e: Exception) {
+                Log.w("WeKnora", "refreshHistory failed", e)
+            } finally {
+                historyLoading = false
+            }
+        }
+    }
+
     /* ---------------- 本轮的运行参数（智能体 / 模型 / 思考强度 / 附件） ---------------- */
     val agents = mutableStateListOf<Agent>()
     val models = mutableStateListOf<ModelInfo>()
     /** 空串 = 不用智能体，走 knowledge-chat */
-    var selectedAgentId by mutableStateOf("")
+    var selectedAgentId by mutableStateOf(store.agentId)
+        private set
+
+    /** 选智能体并记住，下次启动直接恢复 */
+    fun selectAgent(id: String) {
+        selectedAgentId = id
+        store.agentId = id
+    }
     /** 空串 = 沿用知识库/智能体默认模型 */
     var selectedModelId by mutableStateOf("")
     /** 空串 = 沿用智能体配置；否则 off/auto/minimal/low/medium/high/xhigh/max */
@@ -232,27 +320,76 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun saveAndTest() {
+        if (busy) return
         viewModelScope.launch {
             busy = true
-            busyLabel = "测试中…"
+            busyLabel = "登录中…"
             try {
-                store.baseUrl = baseUrlInput
-                store.apiKey = apiKeyInput
-                store.tenantId = tenantIdInput
-                val candidate = WeKnoraApi(store.config())
-                val result = withContext(Dispatchers.IO) { candidate.testConnection() }
-                api = candidate
+                val url = baseUrlInput.trim().trimEnd('/')
+                if (url.isBlank()) throw ApiException("请填写服务地址")
+                val mail = emailInput.trim()
+                if (mail.isBlank() || passwordInput.isBlank()) {
+                    throw ApiException("请填写账号和密码")
+                }
+                store.baseUrl = url
+                val candidate = WeKnoraApi(ConnectionConfig(url, "", ""))
+                val r = withContext(Dispatchers.IO) { candidate.login(mail, passwordInput) }
+                store.token = r.token
+                store.refreshToken = r.refreshToken
+                store.email = mail
+                store.password = passwordInput
+                store.tenantId = r.activeTenant?.id?.toString().orEmpty()
+                tenantIdInput = store.tenantId
+                api = WeKnoraApi(store.config())
                 configured = true
                 connectOk = true
-                snackText = result
+                passwordInput = ""
+                snackText = "登录成功" + (r.activeTenant?.name?.let { " · $it" } ?: "")
                 loadAll()
             } catch (e: Exception) {
                 connectOk = false
-                snackText = "连接失败：" + e.message
-                Log.w("WeKnora", "testConnection failed", e)
+                snackText = "登录失败：" + e.message
+                Log.w("WeKnora", "login failed", e)
             } finally {
                 busy = false
             }
+        }
+    }
+
+    /** 退出登录：清 token / 密码 / 会话缓存，回到登录页 */
+    fun logout() {
+        cancelStreaming()
+        store.clearSession()
+        api = null
+        configured = false
+        connectOk = null
+        snackText = null
+        emailInput = store.email
+        passwordInput = ""
+    }
+
+    /**
+     * 静默续期：token 过期时用存下来的账号密码重新登录一次。
+     * 成功返回 true（调用方可重试原请求），失败返回 false。
+     */
+    private suspend fun reloginIfPossible(): Boolean {
+        val url = store.baseUrl
+        val mail = store.email
+        val pwd = store.password
+        if (url.isBlank() || mail.isBlank() || pwd.isBlank()) return false
+        return try {
+            val r = withContext(Dispatchers.IO) {
+                WeKnoraApi(ConnectionConfig(url, "", "")).login(mail, pwd)
+            }
+            store.token = r.token
+            store.refreshToken = r.refreshToken
+            store.tenantId = r.activeTenant?.id?.toString().orEmpty()
+            tenantIdInput = store.tenantId
+            api = WeKnoraApi(store.config())
+            true
+        } catch (e: Exception) {
+            Log.w("WeKnora", "relogin failed", e)
+            false
         }
     }
 
@@ -274,6 +411,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 val l = withContext(Dispatchers.IO) { apiNow().listAgents() }
                 agents.clear()
                 agents.addAll(l)
+                // 记住的智能体可能已被删除：清掉，别让下拉一直显示一个不存在的选项
+                if (selectedAgentId.isNotBlank() && l.none { it.id == selectedAgentId }) {
+                    selectAgent("")
+                }
             } catch (e: Exception) {
                 Log.w("WeKnora", "loadAgents failed（可能 API Key 无 read_agents 能力）", e)
             }
@@ -299,13 +440,28 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun loadKnowledgeBases() {
         viewModelScope.launch {
             try {
-                val list = withContext(Dispatchers.IO) { apiNow().listKnowledgeBases() }
+                val list = try {
+                    withContext(Dispatchers.IO) { apiNow().listKnowledgeBases() }
+                } catch (e: ApiException) {
+                    // token 过期（401）：用存下来的账号密码静默续一次，再重试
+                    if (e.code == 401 && reloginIfPossible()) {
+                        withContext(Dispatchers.IO) { apiNow().listKnowledgeBases() }
+                    } else {
+                        throw e
+                    }
+                }
                 knowledgeBases.clear()
                 knowledgeBases.addAll(list)
                 loadKbStats()
                 val remembered = store.lastKbId
-                val target = list.firstOrNull { it.id == remembered } ?: list.firstOrNull()
-                if (target != null) selectKb(target)
+                when {
+                    // 「全部知识库」是默认值：没记住具体库就按全部来
+                    remembered.isBlank() || remembered == SettingsStore.ALL_KB -> selectAllKb()
+                    else -> {
+                        val target = list.firstOrNull { it.id == remembered }
+                        if (target != null) selectKb(target) else selectAllKb()
+                    }
+                }
             } catch (e: Exception) {
                 snackText = "加载知识库失败：" + e.message
             }
@@ -391,10 +547,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun selectKb(kb: KnowledgeBase) {
-        if (kb.id == currentKb?.id) return
+        if (!allKbsSelected && kb.id == currentKb?.id) return
         // 必须先掐断正在跑的流：否则清空 messages 之后到达的 SSE 帧
         // 会按旧下标写回，直接 IndexOutOfBounds 崩进程
         cancelStreaming()
+        allKbsSelected = false
         currentKb = kb
         store.lastKbId = kb.id
         currentSessionId = null
@@ -407,6 +564,29 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         loadSessions()
         loadDocs()
         loadFolders()
+    }
+
+    /**
+     * 切到「全部知识库」。
+     *
+     * 对话会把所有库 id 一起发给服务端；文档页需要具体库，
+     * 这一页在全部模式下只显示提示，不拉列表。
+     */
+    fun selectAllKb() {
+        if (allKbsSelected) return
+        cancelStreaming()
+        allKbsSelected = true
+        currentKb = null
+        store.lastKbId = SettingsStore.ALL_KB
+        currentSessionId = null
+        messages.clear()
+        selectedDocs.clear()
+        attachments.clear()
+        currentFolder = ""
+        docsTotal = 0
+        docs.clear()
+        folders.clear()
+        sessions.clear()
     }
 
     fun createKb(name: String, desc: String = "") {
@@ -446,12 +626,54 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * 打开一条历史会话：把服务端存的消息拉回来，按 role 还原成气泡。
+     * references 是一个 JSON 字符串，解析后照样能显示来源与图片。
+     */
     fun openSession(s: Session) {
         cancelStreaming()
         currentSessionId = s.id
         messages.clear()
+        selectedDocs.clear()
         attachments.clear()
-        snackText = "已切换会话（历史消息需由服务端接口提供，当前版本新开会话更可靠）"
+        viewModelScope.launch {
+            try {
+                val list = withContext(Dispatchers.IO) { apiNow().loadMessages(s.id, 60) }
+                Log.d("WeKnora", "history loaded: ${list.size} messages")
+                list.forEach { o ->
+                    fun str(key: String) =
+                        (o[key] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() } ?: ""
+
+                    val refEl = when (val raw = o["knowledge_references"]) {
+                        null -> null
+                        is JsonPrimitive -> runCatching {
+                            WeKnoraApi.JSON.parseToJsonElement(raw.content)
+                        }.getOrNull()
+                        else -> raw
+                    }
+                    val refs = refEl?.let { ReferenceParser.parse(it) }.orEmpty()
+                    val content = str("content")
+                    if (content.isBlank()) return@forEach
+                    messages.add(
+                        ChatMessage(
+                            id = str("id").ifBlank { "h" + UUID.randomUUID() },
+                            role = if (str("role") == "user") ChatMessage.Role.USER
+                            else ChatMessage.Role.ASSISTANT,
+                            content = content,
+                            references = refs
+                        )
+                    )
+                }
+                // 历史消息也补一次文档插图（模型当时可能没把图写进正文）
+                messages.lastOrNull { it.role == ChatMessage.Role.ASSISTANT && it.references.isNotEmpty() }
+                    ?.let { loadDocImages(it.id) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("WeKnora", "openSession failed", e)
+                snackText = "加载会话失败：" + e.message
+            }
+        }
     }
 
     fun newSession() {
@@ -498,7 +720,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun attachFiles(uris: List<Uri>) {
         if (uris.isEmpty()) return
-        val kb = currentKb ?: return
+        // 附件是挂在会话上的，必须有具体库来建会话；全部模式下用第一个库兜底
+        val kb = currentKb ?: knowledgeBases.firstOrNull() ?: return
         val resolver = getApplication<Application>().contentResolver
         viewModelScope.launch {
             busy = true
@@ -572,9 +795,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * ============================================================ */
 
     fun send(text: String) {
-        val kb = currentKb ?: return
+        val kbIds = chatKbIds
+        val sessionKbId = currentKb?.id ?: kbIds.firstOrNull() ?: return
         val query = text.trim()
-        if (query.isBlank() || streaming) return
+        if (query.isBlank() || streaming || kbIds.isEmpty()) return
 
         // 本轮参数在流启动那一刻快照下来：流式过程中改下拉不会影响已发出的请求
         val agentId = selectedAgentId
@@ -586,7 +810,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
         viewModelScope.launch {
             val finalSid = try {
-                ensureSession(kb.id, query.take(20))
+                ensureSession(sessionKbId, query.take(20))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -604,24 +828,44 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             streaming = true
 
             val startTime = System.currentTimeMillis()
+            // 智能推理模式下消息的 knowledge_references 是空的，图片只能从
+            // tool_result / references 帧里捡 —— 那是服务端真实返回的数据，
+            // 比模型正文里自己写的句柄可信
+            val frameImages = LinkedHashSet<String>()
             streamJob = launch {
                 try {
                     apiNow().streamChat(
                         sessionId = finalSid,
                         query = query,
-                        kbId = kb.id,
+                        kbIds = kbIds,
                         agentId = agentId,
                         modelId = modelId,
                         reasoningEffort = effort,
                         attachmentIds = attachIds,
                         webSearch = webSearch
                     ).collect { frame ->
+                        if (frame.responseType == StreamFrame.TYPE_TOOL_RESULT ||
+                            frame.responseType == StreamFrame.TYPE_REFERENCES
+                        ) {
+                            val blob = frame.content + " " + (frame.data?.toString() ?: "")
+                            if (blob.contains("resource://")) {
+                                RESOURCE_HANDLE.findAll(blob).forEach { frameImages += it.value }
+                            }
+                        }
                         when (frame.responseType) {
                             StreamFrame.TYPE_THINKING ->
                                 updateMessage(aid) { it.copy(thinking = it.thinking + frame.content) }
 
                             StreamFrame.TYPE_ANSWER ->
                                 updateMessage(aid) { it.copy(content = it.content + frame.content) }
+
+                            StreamFrame.TYPE_REFERENCES -> {
+                                // 检索来源：既给「参考了哪几篇」，也是知识库图片的主要来源
+                                val refs = ReferenceParser.parse(frame.data)
+                                if (refs.isNotEmpty()) {
+                                    updateMessage(aid) { it.copy(references = refs) }
+                                }
+                            }
 
                             StreamFrame.TYPE_TOOL_CALL -> {
                                 // agent 模式会穿插工具调用，名字取出来做 chip 展示
@@ -652,6 +896,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     // 部分实现不发 complete 帧，兜底收尾
                     updateMessage(aid) { if (it.streaming) it.copy(streaming = false) else it }
+                    if (frameImages.isNotEmpty()) {
+                        updateMessage(aid) { it.copy(docImages = frameImages.take(6).toList()) }
+                        Log.d("WeKnora", "docImages from frames: ${frameImages.size}")
+                    } else {
+                        // 帧里没图时，再按引用的文档补一次
+                        runCatching { loadDocImages(aid) }
+                    }
                 } catch (e: CancellationException) {
                     // 用户点「停止生成」/ 切库 / 新会话导致的中断，不是错误：
                     // 必须原样抛出，不能当成失败往气泡里塞红字，否则
@@ -672,6 +923,37 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     Log.d("WeKnora", "done in ${System.currentTimeMillis() - startTime}ms")
                 }
             }
+        }
+    }
+
+    /**
+     * 从被引用的文档里补插图。
+     *
+     * 模型经常：「只写了文字，没把图写进答案」或「写出来的句柄是编的」。
+     * 但文档分块里 `resource://` 图是真实存在的，所以回答落地后按
+     * knowledge_id 拉一次分块，取引用位置附近、最多 6 张。
+     */
+    private suspend fun loadDocImages(aid: String) {
+        val msg = messages.firstOrNull { it.id == aid } ?: return
+        if (msg.docImages.isNotEmpty()) return
+        val ref = msg.references.firstOrNull { it.knowledgeId.isNotBlank() } ?: return
+        val chunks = withContext(Dispatchers.IO) { apiNow().listChunks(ref.knowledgeId) }
+        val found = chunks.mapNotNull { o ->
+            val idx = (o["chunk_index"] as? JsonPrimitive)?.content?.toIntOrNull() ?: -1
+            val content = (o["content"] as? JsonPrimitive)?.content ?: ""
+            val hs = RESOURCE_HANDLE.findAll(content).map { it.value }.toList()
+            if (hs.isEmpty()) null else idx to hs
+        }
+        val target = ref.chunkIndex
+        val ordered = if (target >= 0) {
+            found.sortedBy { kotlin.math.abs(it.first - target) }
+        } else {
+            found.sortedBy { it.first }
+        }
+        val images = ordered.flatMap { it.second }.distinct().take(6)
+        if (images.isNotEmpty()) {
+            updateMessage(aid) { it.copy(docImages = images) }
+            Log.d("WeKnora", "docImages: ${images.size} from ${ref.knowledgeId.take(8)}")
         }
     }
 

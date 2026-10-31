@@ -24,8 +24,8 @@ android {
         // 递增规则：versionCode 每次编译 +1；versionName **只动末位**
         // （1.1.1 → 1.1.2 → …），前两位只在正式发版时手动动。
         // 每次编译完要同步在对话里给一份 release note，并追加到 CHANGELOG.md。
-        versionCode = 5
-        versionName = "1.1.3"
+        versionCode = 16
+        versionName = "1.1.14"
     }
 
     // release 也用 debug 签名：装到手机上即可用，省去配置 keystore 的麻烦。
@@ -68,6 +68,9 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
+    // 图片加载：对话里的知识库图片/Markdown 图片。只引 Coil 一个库，
+    // 自写 Bitmap 加载要处理缓存、生命周期、取消，不值得
+    implementation("io.coil-kt:coil-compose:2.6.0")
     implementation("androidx.navigation:navigation-compose:2.8.2")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.6")

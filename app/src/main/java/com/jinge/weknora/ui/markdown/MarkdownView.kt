@@ -44,7 +44,11 @@ import androidx.compose.ui.unit.sp
  * 渲染出来的每个 [MdBlock] 都是独立 composable，[SelectionContainer] 套在外层即可整体选中。
  */
 @Composable
-fun MarkdownBody(markdown: String, modifier: Modifier = Modifier) {
+fun MarkdownBody(
+    markdown: String,
+    modifier: Modifier = Modifier,
+    onImageClick: (String) -> Unit = {}
+) {
     val blocks = remember(markdown) { Markdown.parse(markdown) }
     val textColor = MaterialTheme.colorScheme.onSurface
 
@@ -64,6 +68,7 @@ fun MarkdownBody(markdown: String, modifier: Modifier = Modifier) {
                 is MdBlock.ListBlock -> ListBlock(block, textColor)
                 is MdBlock.Quote -> QuoteBlock(block, textColor)
                 is MdBlock.Table -> TableBlock(block, textColor)
+                is MdBlock.Image -> MarkdownImage(block.url, block.alt, onOpen = onImageClick)
                 MdBlock.Divider -> HorizontalDivider(
                     color = MaterialTheme.colorScheme.outlineVariant
                 )

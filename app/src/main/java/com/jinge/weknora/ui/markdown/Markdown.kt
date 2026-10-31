@@ -60,6 +60,15 @@ sealed interface MdBlock {
 
     /** 分隔线 */
     object Divider : MdBlock
+
+    /**
+     * 图片：`![alt](url)` 单独成块。
+     *
+     * 知识库里的图片（公有云 OSS / 服务端资源）都是走 Markdown 图片语法回来的，
+     * 之前解析器「有意不支持图片」，于是 `![](...)` 整段原样显示成一串方括号 ——
+     * 用户看到的就是「对话里看不到图片」。
+     */
+    data class Image(val url: String, val alt: String = "") : MdBlock
 }
 
 object Markdown {
@@ -69,6 +78,27 @@ object Markdown {
     private val RE_HR = Regex("""^\s*([-*_])(?:\s*\1){2,}\s*$""")
     private val RE_BULLET = Regex("""^\s*([-*+])\s+(.*)$""")
     private val RE_ORDERED = Regex("""^\s*(\d{1,9})[.)]\s+(.*)$""")
+
+    /**
+     * 图片语法。只认这两种地址：
+     *  - `http(s)://…`：公有云 OSS / 反代后的公网地址，最常见
+     *  - `resource://…`：WeKnora 内部句柄（服务端 resource_urls=public 时会换成 http）
+     * 其他相对路径（如 `/api/v1/...`）按服务地址补全，见 [resolveImageUrl]。
+     */
+    private val RE_IMAGE = Regex("""!\[([^\]]*)]\(\s*([^)\s]+)(?:\s+"[^"]*")?\s*\)""")
+
+    /** 两种图片写法一次匹配：Markdown 图片，或裸的 `resource://<handle>` */
+    private val RE_IMAGE_OR_HANDLE = Regex(
+        """!\[([^\]]*)]\(\s*([^)\s]+)(?:\s+"[^"]*")?\s*\)""" +
+            """|resource://[A-Za-z0-9_-]{6,}"""
+    )
+
+    /**
+     * 裸 URL。WeKnora 会把 `resource://` 在图里重写成 `http://…/r/<token>`，
+     * 但模型经常只把它写成**普通链接**而不是 `![]()` —— 网页端就显示成一串链接，
+     * App 这边如果不处理，连点都点不动。所以行内也要把裸 URL 变成可点链接。
+     */
+    private val RE_BARE_URL = Regex("""https?://[^\s<>()\[\]"']+""")
 
     fun parse(src: String): List<MdBlock> {
         if (src.isBlank()) return emptyList()
@@ -80,8 +110,36 @@ object Markdown {
 
         fun flushPara() {
             val text = para.toString().trim()
-            if (text.isNotEmpty()) blocks += MdBlock.Paragraph(text)
             para.setLength(0)
+            if (text.isEmpty()) return
+
+            // 段落里可能夹着图片，两种写法都要认：
+            //   1. 标准 Markdown：`![alt](url)`
+            //   2. 裸句柄：`resource://<handle>`（handle 模式下的稳定形式，
+            //      模型经常直接这么写，不包 `![]()`）
+            // 图片单独成块，顺序保持原样。
+            var last = 0
+            for (m in RE_IMAGE_OR_HANDLE.findAll(text)) {
+                val before = text.substring(last, m.range.first).trim()
+                if (before.isNotEmpty()) blocks += MdBlock.Paragraph(before)
+                val full = m.value
+                if (full.startsWith("![")) {
+                    val url = m.groupValues[2].trim()
+                    if (url.isNotEmpty()) blocks += MdBlock.Image(url, m.groupValues[1])
+                } else {
+                    blocks += MdBlock.Image(full, "")
+                }
+                last = m.range.last + 1
+            }
+            val rest = text.substring(last).trim()
+            if (rest.isNotEmpty()) {
+                // 整段就是一个图片 URL（没有 ![] 包装）也按图渲染 —— 模型经常这么干
+                if (RE_BARE_URL.matches(rest) && isImageUrl(rest)) {
+                    blocks += MdBlock.Image(rest, "")
+                } else {
+                    blocks += MdBlock.Paragraph(rest)
+                }
+            }
         }
 
         while (i < lines.size) {
@@ -216,6 +274,25 @@ object Markdown {
         else -> MdAlign.START
     }
 
+    private val IMAGE_EXT = setOf("png", "jpg", "jpeg", "gif", "webp", "bmp", "svg")
+
+    /**
+     * 这个 URL 像不像一张图。
+     *
+     * 除了常见后缀，还认服务端的 `/r/<token>` 能力地址 —— WeKnora 把
+     * `resource://` 重写成它，图就是从那来的（日志里同一个链接 200/309KB 之后变 404，
+     * 说明是短时有效的图）。非图片的 `/r/` 链接会在加载失败时降级成「图片加载失败」。
+     */
+    internal fun isImageUrl(url: String): Boolean {
+        // 服务端的稳定图片形式就是 resource://<handle>；模型经常把它裸写在正文里，
+        // 这里必须当成图处理（渲染层会带鉴权走 /files 代理取字节）
+        if (url.startsWith("resource://")) return true
+        val path = url.substringBefore('?').substringBefore('#')
+        val ext = path.substringAfterLast('.', "").lowercase()
+        if (ext in IMAGE_EXT) return true
+        return Regex("""/r/[0-9A-Za-z_-]{8,}$""").containsMatchIn(path)
+    }
+
     /* ---------------- 行内语法 ---------------- */
 
     /**
@@ -229,7 +306,8 @@ object Markdown {
             """|~~([^~\n]+)~~""" +
             """|\*([^*\n]+)\*""" +
             """|_([^_\n]+)_""" +
-            """|\[([^\]\n]+)]\(([^)\n]+)\)"""
+            """|\[([^\]\n]+)]\(([^)\n]+)\)""" +
+            """|(https?://[^\s<>()\[\]"']+)"""
     )
 
     /**
@@ -239,9 +317,14 @@ object Markdown {
      */
     fun inline(src: String, linkColor: Color, codeBackground: Color): AnnotatedString =
         buildAnnotatedString {
+            // 图片已经被块级解析拎走了；这里再兜一层，避免列表项/标题里残留的
+            // `![图](url)` 变成「!图」这样的链接文字。alt 有字就留 alt，否则整段去掉。
+            val cleaned = RE_IMAGE.replace(src) { m ->
+                m.groupValues[1].takeIf { it.isNotBlank() } ?: ""
+            }
             var last = 0
-            for (m in INLINE_TOKEN.findAll(src)) {
-                if (m.range.first > last) append(src.substring(last, m.range.first))
+            for (m in INLINE_TOKEN.findAll(cleaned)) {
+                if (m.range.first > last) append(cleaned.substring(last, m.range.first))
                 val g = m.groupValues
                 val code = g[1]
                 val bold = if (g[2].isNotEmpty()) g[2] else g[3]
@@ -249,6 +332,7 @@ object Markdown {
                 val italic = if (g[5].isNotEmpty()) g[5] else g[6]
                 val linkText = g[7]
                 val linkUrl = g[8]
+                val bareUrl = g[9]
                 when {
                     code.isNotEmpty() -> withStyle(
                         SpanStyle(fontFamily = FontFamily.Monospace, background = codeBackground)
@@ -278,10 +362,22 @@ object Markdown {
                         )
                     ) { append(linkText) }
 
+                    bareUrl.isNotEmpty() -> withLink(
+                        LinkAnnotation.Url(
+                            bareUrl,
+                            TextLinkStyles(
+                                SpanStyle(
+                                    color = linkColor,
+                                    textDecoration = TextDecoration.Underline
+                                )
+                            )
+                        )
+                    ) { append(bareUrl) }
+
                     else -> append(m.value)
                 }
                 last = m.range.last + 1
             }
-            if (last < src.length) append(src.substring(last))
+            if (last < cleaned.length) append(cleaned.substring(last))
         }
 }

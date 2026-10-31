@@ -13,7 +13,7 @@ Android client for a self-hosted WeKnora knowledge base — browse, chat with RA
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-7F52FF?logo=kotlin&logoColor=white)](#)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?logo=jetpackcompose&logoColor=white)](#)
 [![minSdk](https://img.shields.io/badge/minSdk-26-blue)](#)
-[![Version](https://img.shields.io/badge/version-1.1.3-5B40C4)](#)
+[![Version](https://img.shields.io/badge/version-1.1.14-0F6B63)](#)
 
 </div>
 
@@ -26,6 +26,9 @@ Android client for a self-hosted WeKnora knowledge base — browse, chat with RA
 - **SSE 流式输出**，逐字上屏，可中途停止
 - 回答渲染 **Markdown**（标题、列表、表格、围栏代码块、引用、行内样式），窄屏专门处理：代码块横向滚动不折行、表格等宽可横滑、标题降字号
 - 工具调用以 chip 条展示；服务端漏解析的纯文本 `<tool_call>` 会被清洗掉，不污染正文
+- **回答里的图片直接显示**：Markdown 图片 + 来源 `image_*` 分块的配图（公有云 OSS 公网地址可用），点开看大图
+- 回答下方给出**参考来源**（默认收起），可看到引用了哪几篇、摘要与来源图片
+- 对话页**保持屏幕常亮**，长回答不会读到一半黑屏
 - 正文长按可选中复制，渲染与一键复制都用清洗后的文本
 - 会话创建 / 切换 / 删除，支持附件上传
 
@@ -41,7 +44,8 @@ Android client for a self-hosted WeKnora knowledge base — browse, chat with RA
 **连接与主题**
 - 首次启动引导页填写：服务地址、API Key、Tenant ID，保存前可**测试连接**
 - 局域网无 TLS 部署也可用（manifest 已放行明文 http，供 `http://<内网IP>:8080` 直连；公网反代请配 https）
-- Material 3 明暗双主题，跟随系统；品牌紫 `#5B40C4` / 顶栏 `#26215C`
+- Material 3 明暗双主题，跟随系统；视觉语言「墨与信号」——信号青 `#0F6B63` / 墨色顶栏 `#12201E` / 暖纸底 `#F5F3EE`
+- 设置页可**检查更新**（读仓库根目录 `update.json`，更新源可改成自己的 NAS）
 
 ## 技术栈 / Tech Stack
 
@@ -94,7 +98,23 @@ app/src/main/java/com/jinge/weknora/
 
 ## 更新日志
 
-见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **1.1.3**（versionCode 5）。
+见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **1.1.14**（versionCode 16）。
+
+## 更新机制
+
+`update.json` 放在仓库根目录（也可以放自己的 NAS），格式：
+
+```json
+{
+  "version": "1.1.6",
+  "version_code": 8,
+  "notes": "本次更新说明",
+  "url": "https://github.com/KingNuoNuo/WeKnoraApp/releases/latest"
+}
+```
+
+App 按 `version_code` 比较（缺失时退化为语义化版本比较），发现更大就提示下载。
+发版时把这个文件的版本号和 `app/build.gradle.kts` 一起改掉即可。
 
 ## 说明
 

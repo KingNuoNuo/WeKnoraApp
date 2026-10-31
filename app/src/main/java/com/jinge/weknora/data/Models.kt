@@ -84,6 +84,31 @@ data class Session(
     val title: String = "",
     val description: String = "",
     @SerialName("updated_at") val updatedAt: String = ""
+) {
+    /** 列表里显示的相对时间：`10-31 16:59`。解析失败就退回原串 */
+    val timeLabel: String
+        get() {
+            val t = updatedAt.indexOf('T')
+            return if (t >= 10 && updatedAt.length >= t + 6) {
+                updatedAt.substring(5, t + 6).replace('T', ' ')
+            } else updatedAt
+        }
+}
+
+/** 历史消息（GET /api/v1/messages/{sid}/load） */
+@Serializable
+data class HistoryMessage(
+    val id: String = "",
+    val role: String = "",
+    val content: String = "",
+    /**
+     * 服务端这个字段类型不统一：用户消息是字符串 `"[]"`，
+     * 助手消息是数组（参考文献对象列表）。用 JsonElement 接住，
+     * 由调用方判断是字符串还是数组 —— 声明成 String 会在助手消息上直接抛
+     * SerializationException。
+     */
+    @SerialName("knowledge_references") val references: JsonElement? = null,
+    @SerialName("created_at") val createdAt: String = ""
 )
 
 @Serializable
@@ -340,6 +365,26 @@ data class ChatChunk(
 
 /* ---------------- UI 侧消息 ---------------- */
 
+/**
+ * 一条检索来源（SSE `references` 帧里的一项）。
+ *
+ * 服务端字段是 SearchResult：`knowledge_title` / `knowledge_filename` /
+ * `content` / `chunk_type` / `image_info`。这里只挑界面用得到的，
+ * 全部给默认值 —— 老版本服务端少几个字段也不至于让整条流解析失败。
+ */
+data class ChatReference(
+    val title: String = "",
+    val snippet: String = "",
+    /** 这条来源带的图片（`image_*` 分块的 image_info.url / original_url） */
+    val imageUrls: List<String> = emptyList(),
+    /** 联网搜索的网页地址 */
+    val url: String = "",
+    /** 来源文档 id：用它去拉该文档的分块，补「文档插图」 */
+    val knowledgeId: String = "",
+    /** 引用的分块下标：取图时优先取它附近的 */
+    val chunkIndex: Int = -1
+)
+
 data class ChatMessage(
     val id: String = "",
     val role: Role,
@@ -356,7 +401,26 @@ data class ChatMessage(
      * 打开联网搜索后第一轮要 70s 上下（要先搜再答），
      * 还写「思考中…」会让用户以为卡死了。
      */
-    val webSearch: Boolean = false
+    val webSearch: Boolean = false,
+    /** 检索来源。回答正文之外还能看到「参考了哪几篇、有没有配图」 */
+    val references: List<ChatReference> = emptyList(),
+    /**
+     * 从引用文档里补的插图（按引用位置就近取的资源句柄）。
+     *
+     * 模型经常不把图写进答案、或者写出来的句柄是编的；文档本身的分块里
+     * 图是真实存在的，所以回答落地后按 knowledge_id 去拉一次分块补图。
+     */
+    val docImages: List<String> = emptyList()
 ) {
+    /**
+     * 这条回答要显示的图片：来源里的图 + 正文 Markdown 里的图。
+     *
+     * 正文里的图由 Markdown 渲染器自己画（位置跟着段落走），这里只收来源图 ——
+     * 用户问「有没有架构图」时，即使模型只在正文里说「见下图」，
+     * 来源里的 image 分块也能把图顶到眼前。
+     */
+    val referenceImages: List<String>
+        get() = references.flatMap { it.imageUrls }.distinct()
+
     enum class Role { USER, ASSISTANT }
 }

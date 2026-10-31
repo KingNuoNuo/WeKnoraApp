@@ -38,11 +38,22 @@ private val TOOL_OPEN = Regex("""(?s)<tool_call\b.*$""")
 /** 散落的单个标记，兜底清掉（`<function=x>` / `</parameter>` 这类） */
 private val STRAY_TAG = Regex("""</?(?:function|parameter|tool_call)\b[^>\n]*>""")
 
+/**
+ * 引用标签。0.8.x 的引用是 `<kb doc="e04FIRM0.pdf" chunkid="…" kbid="…"/>`，
+ * 0.9 换成了 `<ref id="c3"/>`，联网来源是 `<web …/>`。
+ *
+ * 网页端会把它们渲染成角标，未处理的客户端就只能看到一大坨 UUID ——
+ * 一条回答里出现两三次，正文就完全没法读了。这里直接删掉：
+ * 来源已经单独以「参考 N 篇」列出，正文里不需要再背一遍 ID。
+ */
+private val CITATION_TAG = Regex("""(?s)<(?:kb|web|ref)\b[^>]*?/?>""")
+
 fun stripToolCalls(text: String): String {
     if (text.isEmpty()) return text
-    // 快路径：绝大多数回答本来就不含这些东西，别白跑三遍正则
+    // 快路径：绝大多数回答本来就不含这些东西，别白跑正则
     if (!text.contains("<tool_call") && !text.contains("</tool_call") &&
-        !text.contains("<function") && !text.contains("</parameter")
+        !text.contains("<function") && !text.contains("</parameter") &&
+        !text.contains("<kb") && !text.contains("<web") && !text.contains("<ref")
     ) {
         return text
     }
@@ -50,5 +61,8 @@ fun stripToolCalls(text: String): String {
         .replace(TOOL_BLOCK, "")
         .replace(TOOL_OPEN, "")
         .replace(STRAY_TAG, "")
+        .replace(CITATION_TAG, "")
+        // 删标签后常留下「 。」这种空格，收一下
+        .replace(Regex("""[ \t]{2,}"""), " ")
         .trim()
 }

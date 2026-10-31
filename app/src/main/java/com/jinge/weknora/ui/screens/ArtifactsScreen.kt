@@ -1,6 +1,7 @@
 package com.jinge.weknora.ui.screens
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -17,19 +19,22 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -41,13 +46,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jinge.weknora.data.Artifact
 import com.jinge.weknora.ui.AppViewModel
+import com.jinge.weknora.ui.theme.monoStyle
 
 /**
  * 产物页：智能体在对话里生成的文件（导出的表格、画好的图、写的脚本…）。
@@ -130,19 +140,70 @@ fun ArtifactsScreen(vm: AppViewModel) {
 @Composable
 private fun ArtifactSearchRow(vm: AppViewModel) {
     Row(
-        Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 10.dp, bottom = 4.dp),
+        Modifier
+            .fillMaxWidth()
+            .padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        OutlinedTextField(
-            value = vm.artifactFilter,
-            onValueChange = { vm.artifactFilter = it },
-            label = { Text("搜索产物或会话") },
-            singleLine = true,
+        // 与文档页同一条搜索框（关键词是本地实时过滤，回车只用来收键盘）
+        Surface(
             shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(0.8.dp, MaterialTheme.colorScheme.outlineVariant),
             modifier = Modifier.weight(1f)
-        )
-        IconButton(onClick = { vm.loadArtifacts() }) {
-            Icon(Icons.Filled.Refresh, contentDescription = "重新扫描产物")
+        ) {
+            Row(
+                Modifier
+                    .height(46.dp)
+                    .padding(start = 12.dp, end = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Filled.Search, null,
+                    Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                BasicTextField(
+                    value = vm.artifactFilter,
+                    onValueChange = { vm.artifactFilter = it },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(
+                        color = MaterialTheme.colorScheme.onSurface
+                    ),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = {}),
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 8.dp),
+                    decorationBox = { inner ->
+                        Box(contentAlignment = Alignment.CenterStart) {
+                            if (vm.artifactFilter.isEmpty()) {
+                                Text(
+                                    "搜索产物或会话",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            inner()
+                        }
+                    }
+                )
+                Box(
+                    Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .clickable { vm.loadArtifacts() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Filled.Refresh,
+                        contentDescription = "重新扫描产物",
+                        Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
         }
     }
 }
@@ -238,14 +299,14 @@ private fun ArtifactError(message: String, onRetry: () -> Unit) {
         verticalArrangement = Arrangement.Center
     ) {
         Surface(
-            shape = CircleShape,
+            shape = MaterialTheme.shapes.large,
             color = MaterialTheme.colorScheme.errorContainer,
-            modifier = Modifier.size(72.dp)
+            modifier = Modifier.size(64.dp)
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
                     Icons.Filled.ErrorOutline, null,
-                    Modifier.size(32.dp),
+                    Modifier.size(28.dp),
                     tint = MaterialTheme.colorScheme.onErrorContainer
                 )
             }
@@ -282,18 +343,16 @@ private fun ArtifactEmpty(filtered: Boolean) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        // 圆形托盘：全 App 空态的图标底盘统一成圆形。
-        // 尺寸分两档（对话页 84dp 是引导型、列表页 72dp 是功能型），但形状必须一致 ——
-        // 之前这里 24dp、文档页 24dp、对话页 28dp，来回切页能看出「盘子」长得不一样
+        // 与文档页 / 对话页同一套空态托盘：圆角方块 + 中性底，只变尺寸不变形状
         Surface(
-            shape = CircleShape,
+            shape = MaterialTheme.shapes.large,
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            modifier = Modifier.size(72.dp)
+            modifier = Modifier.size(64.dp)
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
                     Icons.Filled.Inbox, null,
-                    Modifier.size(32.dp),
+                    Modifier.size(28.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -390,14 +449,13 @@ private fun ArtifactCard(
 private fun ArtifactBadge(ext: String) {
     Surface(
         shape = MaterialTheme.shapes.extraSmall,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        modifier = Modifier.size(width = 38.dp, height = 30.dp)
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = Modifier.size(width = 36.dp, height = 34.dp)
     ) {
         Box(contentAlignment = Alignment.Center) {
             Text(
                 ext,
-                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                fontWeight = FontWeight.Medium,
+                style = monoStyle(MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp)),
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
