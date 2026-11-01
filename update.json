@@ -1,6 +1,6 @@
 {
-  "version": "1.1.21",
-  "version_code": 23,
-  "notes": "PDF 支持上下连续滑动，保留目录与页码跳转；对话大图新增保存到相册",
-  "url": "https://github.com/KingNuoNuo/WeKnoraApp/releases/latest"
+  "version": "1.1.22",
+  "version_code": 24,
+  "notes": "检查更新后直接下载 APK 并唤起系统安装，不再跳转 Release 页面",
+  "url": "https://github.com/KingNuoNuo/WeKnoraApp/releases/download/v1.1.22/app-release.apk"
 }

@@ -2,6 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- 下载到公共 Downloads 目录：API 29+ 无需权限，28 及以下要写权限 -->
     <uses-permission
@@ -21,6 +22,13 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.WeKnora">
         <activity android:name=".DocumentReaderActivity" android:exported="false" />
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
+        </provider>
         <activity
             android:name=".MainActivity"
             android:exported="true"

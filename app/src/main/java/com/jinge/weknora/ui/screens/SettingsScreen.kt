@@ -2,6 +2,8 @@ package com.jinge.weknora.ui.screens
 
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -54,6 +56,8 @@ import com.jinge.weknora.data.KbStats
 import com.jinge.weknora.data.KnowledgeBase
 import com.jinge.weknora.data.UpdateChecker
 import com.jinge.weknora.data.UpdateResult
+import com.jinge.weknora.data.UpdateDownloader
+import androidx.core.content.FileProvider
 import com.jinge.weknora.ui.AppViewModel
 import com.jinge.weknora.ui.theme.monoStyle
 import com.jinge.weknora.ui.theme.onSuccessContainer
@@ -410,6 +414,8 @@ private fun UpdateSection(vm: AppViewModel) {
     val current = remember { checker.current() }
     val scope = rememberCoroutineScope()
     var checking by remember { mutableStateOf(false) }
+    var downloading by remember { mutableStateOf(false) }
+    var downloadError by remember { mutableStateOf<String?>(null) }
     var result by remember { mutableStateOf<UpdateResult?>(null) }
     var editSource by remember { mutableStateOf(false) }
 
@@ -479,15 +485,30 @@ private fun UpdateSection(vm: AppViewModel) {
                     r = result!!,
                     onRetry = { runCheck() },
                     onDownload = { url ->
-                        runCatching {
-                            ctx.startActivity(
-                                Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            )
+                        if (downloading) return@UpdateResultBlock
+                        downloading = true
+                        downloadError = null
+                        scope.launch {
+                            runCatching {
+                                val file = UpdateDownloader.download(ctx, url)
+                                val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", file)
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !ctx.packageManager.canRequestPackageInstalls()) {
+                                    ctx.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${ctx.packageName}")))
+                                } else {
+                                    ctx.startActivity(Intent(Intent.ACTION_VIEW).apply {
+                                        setDataAndType(uri, "application/vnd.android.package-archive")
+                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    })
+                                }
+                            }.onFailure { downloadError = it.message ?: "下载失败" }
+                            downloading = false
                         }
                     }
                 )
             }
+
+            if (downloading) Text("正在下载 APK…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            downloadError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
