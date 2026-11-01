@@ -18,6 +18,9 @@ import com.jinge.weknora.data.ApiException
 import com.jinge.weknora.data.Artifact
 import com.jinge.weknora.data.Attachment
 import com.jinge.weknora.data.ChatMessage
+import com.jinge.weknora.data.ChatHistoryParser
+import com.jinge.weknora.data.movePreambleToThinking
+import com.jinge.weknora.data.applyAnswer
 import com.jinge.weknora.data.ConnectionConfig
 import com.jinge.weknora.data.FolderInfo
 import com.jinge.weknora.data.KbStats
@@ -222,7 +225,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         get() = models.filter { it.type.equals("KnowledgeQA", true) }
     val messages = mutableStateListOf<ChatMessage>()
     var streaming by mutableStateOf(false)
-    var thinkingOpen by mutableStateOf(false)
 
     /* ---------------- 文档 ---------------- */
     val docs = mutableStateListOf<Knowledge>()
@@ -640,30 +642,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val list = withContext(Dispatchers.IO) { apiNow().loadMessages(s.id, 60) }
                 Log.d("WeKnora", "history loaded: ${list.size} messages")
-                list.forEach { o ->
-                    fun str(key: String) =
-                        (o[key] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() } ?: ""
-
-                    val refEl = when (val raw = o["knowledge_references"]) {
-                        null -> null
-                        is JsonPrimitive -> runCatching {
-                            WeKnoraApi.JSON.parseToJsonElement(raw.content)
-                        }.getOrNull()
-                        else -> raw
-                    }
-                    val refs = refEl?.let { ReferenceParser.parse(it) }.orEmpty()
-                    val content = str("content")
-                    if (content.isBlank()) return@forEach
-                    messages.add(
-                        ChatMessage(
-                            id = str("id").ifBlank { "h" + UUID.randomUUID() },
-                            role = if (str("role") == "user") ChatMessage.Role.USER
-                            else ChatMessage.Role.ASSISTANT,
-                            content = content,
-                            references = refs
-                        )
-                    )
-                }
+                messages.addAll(list.mapNotNull(ChatHistoryParser::parse))
                 // 历史消息也补一次文档插图（模型当时可能没把图写进正文）
                 messages.lastOrNull { it.role == ChatMessage.Role.ASSISTANT && it.references.isNotEmpty() }
                     ?.let { loadDocImages(it.id) }
@@ -850,6 +829,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                             val blob = frame.content + " " + (frame.data?.toString() ?: "")
                             if (blob.contains("resource://")) {
                                 RESOURCE_HANDLE.findAll(blob).forEach { frameImages += it.value }
+                                updateMessage(aid) { it.copy(docImages = frameImages.take(6).toList()) }
                             }
                         }
                         when (frame.responseType) {
@@ -857,11 +837,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                                 updateMessage(aid) { it.copy(thinking = it.thinking + frame.content) }
 
                             StreamFrame.TYPE_ANSWER ->
-                                updateMessage(aid) { it.copy(content = it.content + frame.content) }
+                                updateMessage(aid) { it.applyAnswer(frame) }
 
                             StreamFrame.TYPE_REFERENCES -> {
                                 // 检索来源：既给「参考了哪几篇」，也是知识库图片的主要来源
-                                val refs = ReferenceParser.parse(frame.data)
+                                val refs = ReferenceParser.parse(frame.knowledgeReferences ?: frame.data)
                                 if (refs.isNotEmpty()) {
                                     updateMessage(aid) { it.copy(references = refs) }
                                 }
@@ -870,9 +850,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                             StreamFrame.TYPE_TOOL_CALL -> {
                                 // agent 模式会穿插工具调用，名字取出来做 chip 展示
                                 val name = toolName(frame)
-                                if (name.isNotBlank()) {
+                                if (name != "final_answer") {
                                     updateMessage(aid) { cur ->
-                                        if (name in cur.tools) cur else cur.copy(tools = cur.tools + name)
+                                        val next = cur.movePreambleToThinking()
+                                        if (name.isBlank() || name in next.tools) next
+                                        else next.copy(tools = next.tools + name)
                                     }
                                 }
                             }
@@ -888,7 +870,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                             StreamFrame.TYPE_COMPLETE ->
                                 updateMessage(aid) { cur ->
                                     cur.copy(
-                                        content = cur.content.ifEmpty { extractFinal(frame) },
+                                        content = extractFinal(frame).ifBlank { cur.content },
                                         streaming = false
                                     )
                                 }
@@ -992,7 +974,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * complete 帧里 data.final_content 是完整答案，取它作为兜底。
+     * complete 帧里 data.final_content 是完整答案，优先使用服务端的最终内容
+     * （可能包含流式正文里尚未补全的图片地址）。
      * 必须按 JsonPrimitive 取值：直接 toString() 会把 \n 变成字面的 \\n、
      * 引号带转义符一起塞进正文。
      */
@@ -1244,6 +1227,19 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * 下载原始文件。交给系统 DownloadManager：
      * 自带进度通知、大文件不用自己管 IO、也不用申请存储权限（API 29+）。
      */
+    fun openDocument(context: Context, doc: Knowledge) {
+        val format = doc.fileType.trimStart('.').lowercase().ifBlank { doc.title.substringAfterLast('.', "").lowercase() }
+        if (format !in setOf("pdf", "docx")) {
+            snackText = if (format == "doc") "旧版 .doc 请先转换为 .docx 后阅读；仍可下载原文" else "内置阅读支持 PDF 和 DOCX；其他格式请下载原文"
+            return
+        }
+        val api = api ?: return
+        val headers = android.os.Bundle().apply { api.authHeaders().forEach { (key, value) -> putString(key, value) } }
+        context.startActivity(android.content.Intent(context, com.jinge.weknora.DocumentReaderActivity::class.java)
+            .putExtra("url", api.downloadUrl(doc.id)).putExtra("title", doc.title)
+            .putExtra("format", format).putExtra("headers", headers))
+    }
+
     fun downloadDoc(context: Context, doc: Knowledge) {
         val api = api ?: return
         try {

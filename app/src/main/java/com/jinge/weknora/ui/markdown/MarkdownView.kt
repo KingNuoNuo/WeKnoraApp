@@ -5,16 +5,12 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -23,7 +19,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -58,16 +55,16 @@ fun MarkdownBody(
     ) {
         blocks.forEach { block ->
             when (block) {
-                is MdBlock.Heading -> HeadingBlock(block, textColor)
+                is MdBlock.Heading -> HeadingBlock(block, textColor, onImageClick)
                 is MdBlock.Paragraph -> InlineText(
                     block.text,
                     MaterialTheme.typography.bodyLarge,
                     textColor
                 )
                 is MdBlock.Code -> CodeBlock(block)
-                is MdBlock.ListBlock -> ListBlock(block, textColor)
-                is MdBlock.Quote -> QuoteBlock(block, textColor)
-                is MdBlock.Table -> TableBlock(block, textColor)
+                is MdBlock.ListBlock -> ListBlock(block, textColor, onImageClick)
+                is MdBlock.Quote -> QuoteBlock(block, textColor, onImageClick)
+                is MdBlock.Table -> TableBlock(block, textColor, onImageClick)
                 is MdBlock.Image -> MarkdownImage(block.url, block.alt, onOpen = onImageClick)
                 MdBlock.Divider -> HorizontalDivider(
                     color = MaterialTheme.colorScheme.outlineVariant
@@ -78,7 +75,7 @@ fun MarkdownBody(
 }
 
 @Composable
-private fun HeadingBlock(block: MdBlock.Heading, color: Color) {
+private fun HeadingBlock(block: MdBlock.Heading, color: Color, onImageClick: (String) -> Unit) {
     // 4~6 级标题在手机上跟正文区分度已经很小，统一压到 labelLarge，靠字重区分
     val style = when (block.level) {
         1 -> MaterialTheme.typography.titleLarge
@@ -86,7 +83,7 @@ private fun HeadingBlock(block: MdBlock.Heading, color: Color) {
         3 -> MaterialTheme.typography.titleSmall
         else -> MaterialTheme.typography.labelLarge
     }
-    InlineText(block.text, style.copy(fontWeight = FontWeight.Bold), color)
+    InlineText(block.text, style.copy(fontWeight = FontWeight.Bold), color, onImageClick = onImageClick)
 }
 
 @Composable
@@ -123,7 +120,7 @@ private fun CodeBlock(block: MdBlock.Code) {
 }
 
 @Composable
-private fun ListBlock(block: MdBlock.ListBlock, color: Color) {
+private fun ListBlock(block: MdBlock.ListBlock, color: Color, onImageClick: (String) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         block.items.forEachIndexed { index, item ->
             Row(verticalAlignment = Alignment.Top) {
@@ -141,7 +138,8 @@ private fun ListBlock(block: MdBlock.ListBlock, color: Color) {
                     item,
                     MaterialTheme.typography.bodyLarge,
                     color,
-                    Modifier.weight(1f)
+                    Modifier.weight(1f),
+                    onImageClick = onImageClick
                 )
             }
         }
@@ -149,24 +147,17 @@ private fun ListBlock(block: MdBlock.ListBlock, color: Color) {
 }
 
 @Composable
-private fun QuoteBlock(block: MdBlock.Quote, color: Color) {
-    // IntrinsicSize.Min 让左侧竖条跟着文字高度走，而不是撑满整列
-    Row(Modifier.height(IntrinsicSize.Min)) {
-        Box(
-            Modifier
-                .width(3.dp)
-                .fillMaxHeight()
-                .clip(RoundedCornerShape(2.dp))
-                .background(MaterialTheme.colorScheme.outline)
-        )
-        Spacer(Modifier.width(10.dp))
-        InlineText(
-            block.text,
-            MaterialTheme.typography.bodyMedium,
-            color,
-            Modifier.weight(1f)
-        )
-    }
+private fun QuoteBlock(block: MdBlock.Quote, color: Color, onImageClick: (String) -> Unit) {
+    // Draw the rule after measurement: async images cannot answer intrinsic-size queries.
+    val ruleColor = MaterialTheme.colorScheme.outline
+    InlineText(
+        block.text,
+        MaterialTheme.typography.bodyMedium,
+        color,
+        Modifier.drawBehind { drawRect(ruleColor, size = Size(3.dp.toPx(), size.height)) }
+            .padding(start = 13.dp),
+        onImageClick = onImageClick
+    )
 }
 
 /**
@@ -189,7 +180,7 @@ private fun estimateWidth(text: String): Int {
 }
 
 @Composable
-private fun TableBlock(block: MdBlock.Table, color: Color) {
+private fun TableBlock(block: MdBlock.Table, color: Color, onImageClick: (String) -> Unit) {
     val cols = block.header.size
     if (cols == 0) return
 
@@ -211,7 +202,7 @@ private fun TableBlock(block: MdBlock.Table, color: Color) {
         Column(Modifier.horizontalScroll(rememberScrollState())) {
             Row(Modifier.background(MaterialTheme.colorScheme.surfaceContainerHighest)) {
                 block.header.forEachIndexed { c, cell ->
-                    TableCell(cell, widths[c], block.aligns.getOrElse(c) { MdAlign.START }, color, true)
+                    TableCell(cell, widths[c], block.aligns.getOrElse(c) { MdAlign.START }, color, true, onImageClick)
                 }
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -223,7 +214,8 @@ private fun TableBlock(block: MdBlock.Table, color: Color) {
                             widths[c],
                             block.aligns.getOrElse(c) { MdAlign.START },
                             color,
-                            false
+                            false,
+                            onImageClick
                         )
                     }
                 }
@@ -233,7 +225,10 @@ private fun TableBlock(block: MdBlock.Table, color: Color) {
 }
 
 @Composable
-private fun TableCell(text: String, width: Dp, align: MdAlign, color: Color, bold: Boolean) {
+private fun TableCell(
+    text: String, width: Dp, align: MdAlign, color: Color, bold: Boolean,
+    onImageClick: (String) -> Unit
+) {
     InlineText(
         text,
         MaterialTheme.typography.bodySmall.copy(
@@ -247,13 +242,39 @@ private fun TableCell(text: String, width: Dp, align: MdAlign, color: Color, bol
             MdAlign.START -> TextAlign.Start
             MdAlign.CENTER -> TextAlign.Center
             MdAlign.END -> TextAlign.End
-        }
+        },
+        onImageClick = onImageClick
     )
 }
 
 /** 带行内样式的一段文本。所有正文最终都走这里，保证行内解析只有一份实现 */
 @Composable
 private fun InlineText(
+    text: String,
+    style: TextStyle,
+    color: Color,
+    modifier: Modifier = Modifier,
+    textAlign: TextAlign? = null,
+    onImageClick: (String) -> Unit = {}
+) {
+    val parts = remember(text) { Markdown.splitMedia(text) }
+    if (parts.none { it is MdBlock.Image }) {
+        StyledText(text, style, color, modifier, textAlign)
+        return
+    }
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        parts.forEach { part ->
+            when (part) {
+                is MdBlock.Paragraph -> StyledText(part.text, style, color, textAlign = textAlign)
+                is MdBlock.Image -> MarkdownImage(part.url, part.alt, onOpen = onImageClick)
+                else -> Unit
+            }
+        }
+    }
+}
+
+@Composable
+private fun StyledText(
     text: String,
     style: TextStyle,
     color: Color,

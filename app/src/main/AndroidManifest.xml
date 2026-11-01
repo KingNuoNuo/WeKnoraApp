@@ -20,6 +20,7 @@
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.WeKnora">
+        <activity android:name=".DocumentReaderActivity" android:exported="false" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

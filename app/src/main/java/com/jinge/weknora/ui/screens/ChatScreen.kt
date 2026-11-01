@@ -30,6 +30,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -81,6 +82,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -93,13 +95,13 @@ import com.jinge.weknora.data.Attachment
 import com.jinge.weknora.data.ChatMessage
 import com.jinge.weknora.data.ChatReference
 import com.jinge.weknora.data.REASONING_LEVELS
-import com.jinge.weknora.data.ReferenceParser
 import com.jinge.weknora.ui.AppViewModel
 import com.jinge.weknora.ui.markdown.ImageLightbox
 import com.jinge.weknora.ui.markdown.LocalApiBase
 import com.jinge.weknora.ui.markdown.MarkdownBody
+import com.jinge.weknora.ui.markdown.Markdown
+import com.jinge.weknora.ui.markdown.prepareAssistantContent
 import com.jinge.weknora.ui.markdown.resolveImageUrl
-import com.jinge.weknora.ui.markdown.stripToolCalls
 
 /**
  * 对话页。
@@ -464,24 +466,15 @@ private fun MessageBubble(
     onImageClick: (String) -> Unit = {}
 ) {
     val isUser = msg.role == ChatMessage.Role.USER
-    // 服务端偶尔把工具调用的原始标记漏进正文（见 stripToolCalls 的注释）。
-    // 渲染和复制都走清洗后的文本；msg.content 本身保持原文不动 ——
-    // 流式增量是在它上面拼接的，清洗过的文本再接增量会串味。
-    // 服务端偶尔把工具调用的原始标记漏进正文（见 stripToolCalls 的注释）。
-    // 另外模型会把 `resource://<handle>` 截断成 `...K9w...`，用来源里的完整
-    // 句柄补回去 —— 不补的话 /files 会因为路径里有 ".." 直接 400。
-    //
-    // 最后一步：把正文里裸的 `resource://` 句柄**全部删掉**。它们是模型
-    // 从检索结果里抄来的内部标识，实测有相当一部分是编的（404/403）；
-    // 真实图片一律以「参考来源」里的资源为准，不在正文里展示句柄串。
-    val body = remember(msg.content, msg.references) {
-        ReferenceParser.repairTruncatedImageUrls(
-            stripToolCalls(msg.content),
-            msg.referenceImages
-        )
-            .replace(Regex("""resource://[A-Za-z0-9_-]{6,}"""), "")
-            .replace(Regex("""[ \t]{2,}"""), " ")
-            .trim()
+    // Keep stream deltas raw. Separate reasoning and repair image handles at display time.
+    val answer = remember(msg.content, msg.thinking, msg.references, msg.docImages) {
+        prepareAssistantContent(msg.content, msg.thinking, msg.referenceImages + msg.docImages)
+    }
+    val body = answer.body
+    val inlineImages = remember(body) { Markdown.imageUrls(body) }
+    val extraDocImages = msg.docImages.filterNot { it in inlineImages }
+    val extraReferenceImages = msg.referenceImages.filterNot {
+        it in inlineImages || it in extraDocImages
     }
     // 圆角统一 16，只在「贴着自己那一侧」的下角收窄，指示方向
     val bubbleShape = if (isUser)
@@ -525,8 +518,8 @@ private fun MessageBubble(
                 if (msg.tools.isNotEmpty()) {
                     ToolChips(msg.tools)
                 }
-                if (msg.thinking.isNotBlank()) {
-                    ThinkingBlock(msg.thinking)
+                if (answer.thinking.isNotBlank()) {
+                    ThinkingBlock(msg.id, answer.thinking)
                 }
                 if (body.isNotBlank()) {
                     // 模型回答是 Markdown（标题 / 列表 / 表格 / 代码块 / 图片）。
@@ -538,7 +531,7 @@ private fun MessageBubble(
                 }
                 // 来源里的配图：正文没带图时，这些是「看得见知识库图片」的唯一入口。
                 // 单独加一行小标题 —— 否则缩略图紧跟在正文后面，会被当成回答内容的一部分
-                if (msg.docImages.isNotEmpty()) {
+                if (extraDocImages.isNotEmpty()) {
                     Spacer(Modifier.height(10.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
@@ -553,9 +546,9 @@ private fun MessageBubble(
                         )
                     }
                     Spacer(Modifier.height(5.dp))
-                    ReferenceImages(msg.docImages, onOpen = onImageClick)
+                    ReferenceImages(extraDocImages, onOpen = onImageClick)
                 }
-                if (msg.referenceImages.isNotEmpty()) {
+                if (extraReferenceImages.isNotEmpty()) {
                     Spacer(Modifier.height(10.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
@@ -570,7 +563,7 @@ private fun MessageBubble(
                         )
                     }
                     Spacer(Modifier.height(5.dp))
-                    ReferenceImages(msg.referenceImages, onOpen = onImageClick)
+                    ReferenceImages(extraReferenceImages, onOpen = onImageClick)
                 }
                 if (msg.references.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
@@ -610,7 +603,7 @@ private fun MessageBubble(
                 }
                 // 还没出内容：给一个「思考中」的等待态，免得看起来像卡死
                 AnimatedVisibility(
-                    visible = msg.streaming && msg.content.isBlank() && msg.thinking.isBlank(),
+                    visible = msg.streaming && body.isBlank(),
                     enter = fadeIn(),
                     exit = fadeOut()
                 ) {
@@ -669,8 +662,8 @@ private fun ToolChips(tools: List<String>) {
  * 放在气泡里会很长，直接全展开会把答案挤到屏幕外。
  */
 @Composable
-private fun ThinkingBlock(thinking: String) {
-    var expanded by remember { mutableStateOf(false) }
+private fun ThinkingBlock(messageId: String, thinking: String) {
+    var expanded by rememberSaveable(messageId) { mutableStateOf(false) }
     Surface(
         shape = MaterialTheme.shapes.small,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -680,7 +673,9 @@ private fun ThinkingBlock(thinking: String) {
     ) {
         Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
             Row(
-                Modifier.fillMaxWidth(),
+                Modifier.fillMaxWidth()
+                    .toggleable(value = expanded, role = Role.Button, onValueChange = { expanded = it })
+                    .heightIn(min = 48.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
@@ -689,21 +684,16 @@ private fun ThinkingBlock(thinking: String) {
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    "  思考过程",
+                    if (expanded) "  思考过程 · 点击收起" else "  思考过程 · 点击展开",
                     Modifier.weight(1f),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                IconButton(
-                    onClick = { expanded = !expanded },
-                    modifier = Modifier.size(28.dp)
-                ) {
-                    Icon(
-                        Icons.Filled.KeyboardArrowDown,
-                        contentDescription = if (expanded) "收起" else "展开",
-                        Modifier.size(18.dp)
-                    )
-                }
+                Icon(
+                    if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                    contentDescription = null,
+                    Modifier.size(18.dp)
+                )
             }
             AnimatedVisibility(visible = expanded) {
                 SelectionContainer {

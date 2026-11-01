@@ -24,8 +24,8 @@ android {
         // 递增规则：versionCode 每次编译 +1；versionName **只动末位**
         // （1.1.1 → 1.1.2 → …），前两位只在正式发版时手动动。
         // 每次编译完要同步在对话里给一份 release note，并追加到 CHANGELOG.md。
-        versionCode = 16
-        versionName = "1.1.14"
+        versionCode = 23
+        versionName = "1.1.21"
     }
 
     // release 也用 debug 签名：装到手机上即可用，省去配置 keystore 的麻烦。
@@ -71,6 +71,7 @@ dependencies {
     // 图片加载：对话里的知识库图片/Markdown 图片。只引 Coil 一个库，
     // 自写 Bitmap 加载要处理缓存、生命周期、取消，不值得
     implementation("io.coil-kt:coil-compose:2.6.0")
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
     implementation("androidx.navigation:navigation-compose:2.8.2")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.6")
@@ -83,4 +84,5 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
+    testImplementation("junit:junit:4.13.2")
 }

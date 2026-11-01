@@ -160,6 +160,7 @@ fun DocsScreen(
                             selecting = vm.selectedDocs.isNotEmpty(),
                             selected = vm.selectedDocs.contains(doc.id),
                             onToggle = { vm.toggleSelectDoc(doc.id) },
+                            onOpen = { vm.openDocument(ctx, doc) },
                             onDownload = { vm.downloadDoc(ctx, doc) }
                         )
                     }
@@ -509,6 +510,7 @@ private fun DocCard(
     selecting: Boolean,
     selected: Boolean,
     onToggle: () -> Unit,
+    onOpen: () -> Unit,
     onDownload: () -> Unit
 ) {
     Surface(
@@ -525,7 +527,7 @@ private fun DocCard(
             .pointerInput(doc.id, selecting) {
                 detectTapGestures(
                     onLongPress = { if (!selecting) onToggle() },
-                    onTap = { if (selecting) onToggle() }
+                    onTap = { if (selecting) onToggle() else onOpen() }
                 )
             }
     ) {

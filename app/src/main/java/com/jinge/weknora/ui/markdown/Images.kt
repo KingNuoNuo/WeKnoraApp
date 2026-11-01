@@ -33,6 +33,22 @@ import androidx.compose.ui.unit.dp
 import coil.compose.SubcomposeAsyncImage
 import coil.imageLoader
 import coil.request.ImageRequest
+import coil.request.SuccessResult
+import androidx.core.graphics.drawable.toBitmap
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import android.content.pm.PackageManager
+import android.os.Build
+import android.widget.Toast
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import com.jinge.weknora.data.ImageSaver
 
 /**
  * 服务地址。图片地址可能是相对路径（`/api/v1/files/…`），
@@ -165,6 +181,28 @@ private fun BrokenImage(src: String) {
  */
 @Composable
 fun ImageLightbox(src: String, alt: String, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val loader = LocalAppImageLoader.current ?: context.imageLoader
+    val scope = rememberCoroutineScope()
+    var saving by remember(src) { mutableStateOf(false) }
+    val save: () -> Unit = {
+        if (!saving) {
+            saving = true
+            scope.launch {
+                try {
+                    val result = loader.execute(ImageRequest.Builder(context).data(src).allowHardware(false).size(4096).precision(coil.size.Precision.INEXACT).build())
+                    check(result is SuccessResult) { "图片尚未加载成功，请稍后重试" }
+                    withContext(Dispatchers.IO) { ImageSaver.save(context, result.drawable.toBitmap()) }
+                    Toast.makeText(context, "已保存到相册 Pictures/WeKnora", Toast.LENGTH_LONG).show()
+                } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                catch (e: Exception) { Toast.makeText(context, "保存失败：${e.message}", Toast.LENGTH_LONG).show() }
+                finally { saving = false }
+            }
+        }
+    }
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) save() else Toast.makeText(context, "未获得存储权限，无法保存图片", Toast.LENGTH_LONG).show()
+    }
     Box(
         Modifier
             .fillMaxSize()
@@ -205,6 +243,17 @@ fun ImageLightbox(src: String, alt: String, onDismiss: () -> Unit) {
                     tint = Color.White
                 )
             }
+        }
+        Surface(
+            color = Color.Black.copy(alpha = 0.65f),
+            shape = MaterialTheme.shapes.medium,
+            modifier = Modifier.align(Alignment.BottomCenter).padding(24.dp).clickable(enabled = !saving) {
+                if (Build.VERSION.SDK_INT < 29 && ContextCompat.checkSelfPermission(context, android.Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED)
+                    permission.launch(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                else save()
+            }
+        ) {
+            Text(if (saving) "正在保存…" else "保存到相册", color = Color.White, modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp))
         }
     }
 }

@@ -23,7 +23,7 @@ import androidx.compose.ui.text.withStyle
  *     通用库给的是网页式排版，直接套进来还得再包一层去纠正，不如自己写可控。
  *
  * 有意不支持的语法（遇到会当普通文本原样显示，不会崩）：
- *  HTML 标签、图片、脚注、任务列表勾选框、四空格缩进代码块、列表嵌套超过一层。
+ *  HTML 标签、脚注、任务列表勾选框、四空格缩进代码块、列表嵌套超过一层。
  *
  * 这里是**纯函数**，不依赖 Compose，方便单独验证。
  */
@@ -85,12 +85,14 @@ object Markdown {
      *  - `resource://…`：WeKnora 内部句柄（服务端 resource_urls=public 时会换成 http）
      * 其他相对路径（如 `/api/v1/...`）按服务地址补全，见 [resolveImageUrl]。
      */
-    private val RE_IMAGE = Regex("""!\[([^\]]*)]\(\s*([^)\s]+)(?:\s+"[^"]*")?\s*\)""")
-
-    /** 两种图片写法一次匹配：Markdown 图片，或裸的 `resource://<handle>` */
+    /** A quoted resource handle is an image reference; actual code examples stay literal. */
     private val RE_IMAGE_OR_HANDLE = Regex(
-        """!\[([^\]]*)]\(\s*([^)\s]+)(?:\s+"[^"]*")?\s*\)""" +
-            """|resource://[A-Za-z0-9_-]{6,}"""
+        """`+\s*(?<codeHandle>resource://[A-Za-z0-9_-]{6,}(?:\.{2,}|…)?)\s*`+""" +
+            """|`+[^`\n]*`+""" +
+            """|!\[(?<alt>[^\]]*)]\(\s*(?:<(?<angle>[^>\n]+)>|(?<url>(?:[^()\s]|\([^()\s]*\))+))(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)""" +
+            """|\[(?<resourceLabel>[^\]\n]*)]\(\s*(?<linkedHandle>resource://[A-Za-z0-9_-]{6,}(?:\.{2,}|…)?)\s*\)""" +
+            """|\[[^\]\n]*]\([^\n)]*\)""" +
+            """|(?<handle>resource://[A-Za-z0-9_-]{6,}(?:\.{2,}|…)?)"""
     )
 
     /**
@@ -99,6 +101,42 @@ object Markdown {
      * App 这边如果不处理，连点都点不动。所以行内也要把裸 URL 变成可点链接。
      */
     private val RE_BARE_URL = Regex("""https?://[^\s<>()\[\]"']+""")
+
+    /** Text and pictures in their original order, also used inside lists, quotes and cells. */
+    fun splitMedia(text: String): List<MdBlock> {
+        val blocks = ArrayList<MdBlock>()
+        var last = 0
+        for (match in RE_IMAGE_OR_HANDLE.findAll(text)) {
+            val url = match.groups["url"]?.value ?: match.groups["angle"]?.value
+                ?: match.groups["codeHandle"]?.value ?: match.groups["linkedHandle"]?.value
+                ?: match.groups["handle"]?.value ?: continue
+            val before = text.substring(last, match.range.first).trim()
+            if (before.isNotEmpty()) blocks += MdBlock.Paragraph(before)
+            val alt = match.groups["alt"]?.value ?: match.groups["resourceLabel"]?.value.orEmpty()
+            blocks += MdBlock.Image(url, alt.takeUnless { it.contains("resource://") }.orEmpty())
+            last = match.range.last + 1
+        }
+        val rest = text.substring(last).trim()
+        if (rest.isNotEmpty()) {
+            blocks += if (RE_BARE_URL.matches(rest) && isImageUrl(rest)) MdBlock.Image(rest)
+            else MdBlock.Paragraph(rest)
+        }
+        return blocks
+    }
+
+    /** Images actually rendered in the answer; fenced and inline code are excluded. */
+    fun imageUrls(markdown: String): Set<String> = parse(markdown).flatMap { block ->
+        when (block) {
+            is MdBlock.Image -> listOf(block.url)
+            is MdBlock.Heading -> splitMedia(block.text).filterIsInstance<MdBlock.Image>().map { it.url }
+            is MdBlock.Quote -> splitMedia(block.text).filterIsInstance<MdBlock.Image>().map { it.url }
+            is MdBlock.ListBlock -> block.items.flatMap { splitMedia(it) }
+                .filterIsInstance<MdBlock.Image>().map { it.url }
+            is MdBlock.Table -> (block.header + block.rows.flatten()).flatMap { splitMedia(it) }
+                .filterIsInstance<MdBlock.Image>().map { it.url }
+            else -> emptyList()
+        }
+    }.toSet()
 
     fun parse(src: String): List<MdBlock> {
         if (src.isBlank()) return emptyList()
@@ -113,33 +151,7 @@ object Markdown {
             para.setLength(0)
             if (text.isEmpty()) return
 
-            // 段落里可能夹着图片，两种写法都要认：
-            //   1. 标准 Markdown：`![alt](url)`
-            //   2. 裸句柄：`resource://<handle>`（handle 模式下的稳定形式，
-            //      模型经常直接这么写，不包 `![]()`）
-            // 图片单独成块，顺序保持原样。
-            var last = 0
-            for (m in RE_IMAGE_OR_HANDLE.findAll(text)) {
-                val before = text.substring(last, m.range.first).trim()
-                if (before.isNotEmpty()) blocks += MdBlock.Paragraph(before)
-                val full = m.value
-                if (full.startsWith("![")) {
-                    val url = m.groupValues[2].trim()
-                    if (url.isNotEmpty()) blocks += MdBlock.Image(url, m.groupValues[1])
-                } else {
-                    blocks += MdBlock.Image(full, "")
-                }
-                last = m.range.last + 1
-            }
-            val rest = text.substring(last).trim()
-            if (rest.isNotEmpty()) {
-                // 整段就是一个图片 URL（没有 ![] 包装）也按图渲染 —— 模型经常这么干
-                if (RE_BARE_URL.matches(rest) && isImageUrl(rest)) {
-                    blocks += MdBlock.Image(rest, "")
-                } else {
-                    blocks += MdBlock.Paragraph(rest)
-                }
-            }
+            blocks += splitMedia(text)
         }
 
         while (i < lines.size) {
@@ -317,11 +329,8 @@ object Markdown {
      */
     fun inline(src: String, linkColor: Color, codeBackground: Color): AnnotatedString =
         buildAnnotatedString {
-            // 图片已经被块级解析拎走了；这里再兜一层，避免列表项/标题里残留的
-            // `![图](url)` 变成「!图」这样的链接文字。alt 有字就留 alt，否则整段去掉。
-            val cleaned = RE_IMAGE.replace(src) { m ->
-                m.groupValues[1].takeIf { it.isNotBlank() } ?: ""
-            }
+            // Pictures are handled by splitMedia; preserve image syntax inside inline code.
+            val cleaned = src
             var last = 0
             for (m in INLINE_TOKEN.findAll(cleaned)) {
                 if (m.range.first > last) append(cleaned.substring(last, m.range.first))

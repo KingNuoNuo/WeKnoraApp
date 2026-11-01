@@ -62,7 +62,5 @@ fun stripToolCalls(text: String): String {
         .replace(TOOL_OPEN, "")
         .replace(STRAY_TAG, "")
         .replace(CITATION_TAG, "")
-        // 删标签后常留下「 。」这种空格，收一下
-        .replace(Regex("""[ \t]{2,}"""), " ")
         .trim()
 }

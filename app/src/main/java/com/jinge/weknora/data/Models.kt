@@ -115,6 +115,7 @@ data class HistoryMessage(
 data class Knowledge(
     val id: String = "",
     val title: String = "",
+    @SerialName("file_type") val fileType: String = "",
     val type: String = "",
     @SerialName("parse_status") val parseStatus: String = "",
     val source: String = "",
@@ -340,6 +341,7 @@ data class StreamFrame(
     val done: Boolean = false,
     @SerialName("session_id") val sessionId: String = "",
     @SerialName("assistant_message_id") val assistantMessageId: String = "",
+    @SerialName("knowledge_references") val knowledgeReferences: JsonElement? = null,
     val data: JsonElement? = null
 ) {
     companion object {
