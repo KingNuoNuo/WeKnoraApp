@@ -81,7 +81,6 @@ import kotlinx.coroutines.launch
 @Composable
 fun SettingsScreen(vm: AppViewModel) {
     var connectionExpanded by remember { mutableStateOf(false) }
-    var kbMenuExpanded by remember { mutableStateOf(false) }
     Column(
         Modifier
             .fillMaxSize()
@@ -89,26 +88,6 @@ fun SettingsScreen(vm: AppViewModel) {
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        SectionHeader(
-            title = "知识库",
-            loading = vm.kbStatsLoading,
-            onRefresh = { vm.loadKbStats() }
-        )
-
-        Box(Modifier.fillMaxWidth()) {
-            val selectedLabel = if (vm.allKbsSelected) "全部知识库" else vm.currentKb?.name ?: "选择知识库"
-            OutlinedButton(onClick = { kbMenuExpanded = true }, modifier = Modifier.fillMaxWidth()) {
-                Text(selectedLabel, Modifier.weight(1f), textAlign = TextAlign.Start)
-                Text("⌄")
-            }
-            DropdownMenu(expanded = kbMenuExpanded, onDismissRequest = { kbMenuExpanded = false }, modifier = Modifier.fillMaxWidth(0.9f)) {
-                DropdownMenuItem(text = { Text("全部知识库") }, onClick = { vm.selectAllKb(); kbMenuExpanded = false }, trailingIcon = { if (vm.allKbsSelected) Icon(Icons.Filled.Check, null) })
-                vm.knowledgeBases.forEach { kb ->
-                    DropdownMenuItem(text = { Text(kb.name, maxLines = 1, overflow = TextOverflow.Ellipsis) }, onClick = { vm.selectKb(kb); kbMenuExpanded = false }, trailingIcon = { if (!vm.allKbsSelected && vm.currentKb?.id == kb.id) Icon(Icons.Filled.Check, null) })
-                }
-            }
-        }
-
         Row(
             Modifier.fillMaxWidth().padding(top = 10.dp).clickable { connectionExpanded = !connectionExpanded },
             verticalAlignment = Alignment.CenterVertically
