@@ -1,6 +1,6 @@
 {
-  "version": "1.1.26",
-  "version_code": 28,
-  "notes": "最低支持 Android 15；PDF 切换到官方 Jetpack 阅读器，支持搜索和文字选择",
-  "url": "https://github.com/KingNuoNuo/WeKnoraApp/releases/download/v1.1.26/app-release.apk"
+  "version": "1.1.27",
+  "version_code": 29,
+  "notes": "恢复 PDF 目录与页码跳转，优化返回和工具栏；增加官方批注、表单、保存副本与 OCR 接口（部分功能需要系统扩展支持）",
+  "url": "https://github.com/KingNuoNuo/WeKnoraApp/releases/download/v1.1.27/app-release.apk"
 }

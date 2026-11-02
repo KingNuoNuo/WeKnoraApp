@@ -10,10 +10,10 @@
 Android client for a self-hosted WeKnora knowledge base — browse, chat with RAG agents, and manage documents from your phone.
 
 [![Platform](https://img.shields.io/badge/platform-Android%2015%2B-3DDC84?logo=android&logoColor=white)](#)
-[![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-7F52FF?logo=kotlin&logoColor=white)](#)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.1.20-7F52FF?logo=kotlin&logoColor=white)](#)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?logo=jetpackcompose&logoColor=white)](#)
 [![minSdk](https://img.shields.io/badge/minSdk-35-blue)](#)
-[![Version](https://img.shields.io/badge/version-1.1.26-0F6B63)](#)
+[![Version](https://img.shields.io/badge/version-1.1.27-0F6B63)](#)
 
 </div>
 
@@ -57,12 +57,12 @@ Android client for a self-hosted WeKnora knowledge base — browse, chat with RA
 | 架构 | 单 Activity + Compose Navigation + `ViewModel` + `State` |
 | 网络 | OkHttp 手写请求（SSE 自行读 `Source`，不用 Retrofit） |
 | 序列化 | kotlinx.serialization |
-| 构建 | AGP 8.5.2 / Gradle 8.7 / Kotlin 2.0.21 / JDK 17 |
-| SDK | minSdk 35 · targetSdk 35 · compileSdk 35 |
+| 构建 | AGP 8.9.1 / Gradle 8.11.1 / Kotlin 2.1.20 / JDK 17 |
+| SDK | minSdk 35 · targetSdk 35 · compileSdk 36 |
 
 ## 构建 / Build
 
-需要 **JDK 17** + **Android SDK 35**。
+需要 **JDK 17** + **Android SDK 36 扩展 19**。
 
 ```bash
 # Windows
@@ -100,7 +100,7 @@ app/src/main/java/com/jinge/weknora/
 
 ## 更新日志
 
-见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **1.1.26**（versionCode 28）。
+见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **1.1.27**（versionCode 29）。
 
 ## 更新机制
 
