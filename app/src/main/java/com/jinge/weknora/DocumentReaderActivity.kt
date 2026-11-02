@@ -138,10 +138,10 @@ class DocumentReaderActivity : ComponentActivity() {
                 Surface(Modifier.fillMaxSize(), color = Color(0xFFF1F3F5)) {
                     Column(Modifier.fillMaxSize().systemBarsPadding()) {
                         Surface(color = Color(0xFF12201E), shadowElevation = 3.dp) {
-                            Row(Modifier.fillMaxWidth().height(58.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                TextButton(onClick = { finish() }, colors = ButtonDefaults.textButtonColors(contentColor = Color.White)) { Text("‹  返回") }
-                                Text(intent.getStringExtra("title").orEmpty(), Modifier.weight(1f).padding(horizontal = 8.dp), maxLines = 1,
-                                    color = Color.White, style = MaterialTheme.typography.titleMedium)
+                            Row(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                TextButton(onClick = { finish() }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp), colors = ButtonDefaults.textButtonColors(contentColor = Color.White)) { Text("‹ 返回") }
+                                Text(intent.getStringExtra("title").orEmpty(), Modifier.weight(1f).padding(horizontal = 6.dp), maxLines = 1,
+                                    color = Color.White, style = MaterialTheme.typography.titleSmall)
                             }
                         }
                         when {
