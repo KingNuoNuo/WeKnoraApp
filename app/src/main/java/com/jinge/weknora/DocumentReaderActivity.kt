@@ -113,8 +113,13 @@ class DocumentReaderActivity : ComponentActivity() {
                                     }
                                 } }
                             }
-                            if (intent.getStringExtra("format") == "docx") {
+                            val format = intent.getStringExtra("format")
+                            if (format == "docx") {
                                 com.jinge.weknora.data.WordPreview.toHtml(file)
+                            } else if (format == "pptx") {
+                                com.jinge.weknora.data.PowerPointPreview.toHtml(file)
+                            } else if (format == "html" || format == "htm") {
+                                file.readText(Charsets.UTF_8)
                             } else {
                                 synchronized(lock) {
                                     check(!closed) { "阅读器已关闭" }

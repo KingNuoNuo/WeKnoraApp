@@ -1229,8 +1229,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun openDocument(context: Context, doc: Knowledge) {
         val format = doc.fileType.trimStart('.').lowercase().ifBlank { doc.title.substringAfterLast('.', "").lowercase() }
-        if (format !in setOf("pdf", "docx")) {
-            snackText = if (format == "doc") "旧版 .doc 请先转换为 .docx 后阅读；仍可下载原文" else "内置阅读支持 PDF 和 DOCX；其他格式请下载原文"
+        if (format !in setOf("pdf", "docx", "pptx", "html", "htm")) {
+            snackText = if (format == "doc" || format == "ppt") "旧版 Office 文件请先转换为 DOCX/PPTX 后阅读；仍可下载原文" else "内置阅读支持 PDF、DOCX、PPTX 和 HTML；其他格式请下载原文"
             return
         }
         val api = api ?: return
