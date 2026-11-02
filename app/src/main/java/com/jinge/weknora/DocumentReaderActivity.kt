@@ -21,6 +21,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -37,6 +39,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.util.concurrent.TimeUnit
+import java.security.MessageDigest
 
 /** Private, authenticated document reader. Originals stay in application cache. */
 class DocumentReaderActivity : ComponentActivity() {
@@ -73,10 +76,13 @@ class DocumentReaderActivity : ComponentActivity() {
                     error = null
                     try {
                         html = withContext(Dispatchers.IO) {
-                            synchronized(lock) { document?.close(); document = null; descriptor?.close(); descriptor = null; cached?.delete() }
-                            val file = File.createTempFile("reader-", ".bin", cacheDir)
+                            synchronized(lock) { document?.close(); document = null; descriptor?.close(); descriptor = null }
+                            val sourceUrl = intent.getStringExtra("url") ?: error("缺少文档地址")
+                            val digest = MessageDigest.getInstance("SHA-256").digest(sourceUrl.toByteArray())
+                                .joinToString("") { "%02x".format(it) }.take(24)
+                            val file = File(cacheDir, "weknora-doc-$digest.bin")
                             cached = file
-                            val request = Request.Builder().url(intent.getStringExtra("url") ?: error("缺少文档地址"))
+                            val request = Request.Builder().url(sourceUrl)
                             intent.getBundleExtra("headers")?.let { headers ->
                                 headers.keySet().forEach { key -> headers.getString(key)?.let { request.header(key, it) } }
                             }
@@ -91,7 +97,7 @@ class DocumentReaderActivity : ComponentActivity() {
                                     if (!sameOrigin) authKeys.forEach { safe.removeHeader(it) }
                                     chain.proceed(safe.build())
                                 }.build()
-                            client.newCall(request.build()).execute().use { response ->
+                            if (!file.exists() || file.length() == 0L) client.newCall(request.build()).execute().use { response ->
                                 check(response.isSuccessful) { "文档读取失败（HTTP ${response.code}）" }
                                 val body = response.body ?: error("文档为空")
                                 check(body.contentLength() <= 100L * 1024 * 1024) { "文档超过 100 MB，请下载阅读" }
@@ -175,10 +181,18 @@ class DocumentReaderActivity : ComponentActivity() {
                         }
                     }
                 }
-                if (showOutline) AlertDialog(
-                    onDismissRequest = { showOutline = false },
-                    title = { Text("PDF 目录") },
-                    text = {
+                if (showOutline) Dialog(onDismissRequest = { showOutline = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+                    Surface(Modifier.fillMaxWidth(0.94f).fillMaxHeight(0.86f), shape = MaterialTheme.shapes.large, tonalElevation = 5.dp) {
+                        Column(Modifier.fillMaxSize().padding(top = 14.dp, bottom = 8.dp)) {
+                            Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("PDF 目录", style = MaterialTheme.typography.titleLarge)
+                                    Text("点击章节跳转；点击箭头展开子目录", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                TextButton(onClick = { showOutline = false }) { Text("关闭") }
+                            }
+                            HorizontalDivider(Modifier.padding(top = 8.dp))
+                            Box(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
                         if (bookmarks.isEmpty()) Text(if (outlineError) "目录读取失败，仍可按页码跳转。" else "此 PDF 没有内嵌书签目录，可使用页码跳转。")
                         else {
                             val visible = remember(bookmarks, expandedBookmarks) {
@@ -192,25 +206,26 @@ class DocumentReaderActivity : ComponentActivity() {
                                 }
                                 result
                             }
-                            LazyColumn(Modifier.heightIn(max = 460.dp)) {
+                            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 8.dp)) {
                                 items(visible) { index ->
                                     val bookmark = bookmarks[index]
                                     val hasChildren = (bookmarks.getOrNull(index + 1)?.depth ?: -1) > bookmark.depth
-                                    Row(Modifier.fillMaxWidth().padding(start = (bookmark.depth * 12).dp), verticalAlignment = Alignment.CenterVertically) {
-                                        if (hasChildren) TextButton(onClick = { expandedBookmarks = if (index in expandedBookmarks) expandedBookmarks - index else expandedBookmarks + index }, modifier = Modifier.width(42.dp)) {
+                                    Row(Modifier.fillMaxWidth().heightIn(min = 38.dp).padding(start = (bookmark.depth * 10).dp), verticalAlignment = Alignment.CenterVertically) {
+                                        if (hasChildren) TextButton(onClick = { expandedBookmarks = if (index in expandedBookmarks) expandedBookmarks - index else expandedBookmarks + index }, modifier = Modifier.width(34.dp), contentPadding = PaddingValues(0.dp)) {
                                             Text(if (index in expandedBookmarks) "⌄" else "›", style = MaterialTheme.typography.titleMedium)
-                                        } else Spacer(Modifier.width(42.dp))
-                                        TextButton(onClick = { bookmark.page?.let(goToPage); showOutline = false }, enabled = bookmark.page != null, modifier = Modifier.weight(1f)) {
-                                            Text(bookmark.title, Modifier.weight(1f), maxLines = 2)
-                                            bookmark.page?.let { Text("${it + 1}") }
+                                        } else Spacer(Modifier.width(34.dp))
+                                        TextButton(onClick = { bookmark.page?.let(goToPage); showOutline = false }, enabled = bookmark.page != null, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp)) {
+                                            Text(bookmark.title, Modifier.weight(1f), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, textAlign = androidx.compose.ui.text.style.TextAlign.Start)
+                                            bookmark.page?.let { Text("${it + 1}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                                         }
                                     }
                                 }
                             }
                         }
-                    },
-                    confirmButton = { TextButton(onClick = { showOutline = false }) { Text("关闭") } }
-                )
+                            }
+                        }
+                    }
+                }
                 if (showJump) AlertDialog(
                     onDismissRequest = { showJump = false }, title = { Text("跳转页码") },
                     text = { OutlinedTextField(value = pageInput, onValueChange = { pageInput = it.filter(Char::isDigit).take(7) },
@@ -255,6 +270,6 @@ class DocumentReaderActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         closed = true
-        synchronized(lock) { document?.close(); document = null; descriptor?.close(); descriptor = null; cached?.delete() }
+        synchronized(lock) { document?.close(); document = null; descriptor?.close(); descriptor = null }
     }
 }
