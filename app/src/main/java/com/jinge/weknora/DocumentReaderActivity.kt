@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -67,6 +68,7 @@ class DocumentReaderActivity : ComponentActivity() {
                 var showOutline by remember { mutableStateOf(false) }
                 var showJump by remember { mutableStateOf(false) }
                 var pageInput by remember { mutableStateOf("") }
+                var expandedBookmarks by remember { mutableStateOf<Set<Int>>(emptySet()) }
                 LaunchedEffect(retry) {
                     error = null
                     try {
@@ -122,11 +124,14 @@ class DocumentReaderActivity : ComponentActivity() {
                     } catch (e: kotlinx.coroutines.CancellationException) { throw e
                     } catch (e: Exception) { error = e.message ?: "无法打开文档" }
                 }
-                Surface(Modifier.fillMaxSize()) {
+                Surface(Modifier.fillMaxSize(), color = Color(0xFFF1F3F5)) {
                     Column(Modifier.fillMaxSize().systemBarsPadding()) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            TextButton(onClick = { finish() }) { Text("返回") }
-                            Text(intent.getStringExtra("title").orEmpty(), Modifier.weight(1f), maxLines = 1)
+                        Surface(color = Color(0xFF12201E), shadowElevation = 3.dp) {
+                            Row(Modifier.fillMaxWidth().height(58.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                TextButton(onClick = { finish() }, colors = ButtonDefaults.textButtonColors(contentColor = Color.White)) { Text("‹  返回") }
+                                Text(intent.getStringExtra("title").orEmpty(), Modifier.weight(1f).padding(horizontal = 8.dp), maxLines = 1,
+                                    color = Color.White, style = MaterialTheme.typography.titleMedium)
+                            }
                         }
                         when {
                             error != null -> Column(Modifier.padding(24.dp)) {
@@ -148,17 +153,22 @@ class DocumentReaderActivity : ComponentActivity() {
                                 onRelease = { it.destroy() }
                             )
                             else -> {
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                                    TextButton(onClick = { goToPage(page - 1) }, enabled = page > 0) { Text("上一页") }
-                                    Text("${page + 1} / ${document?.pageCount ?: 0}", Modifier.padding(top = 12.dp))
-                                    TextButton(onClick = { goToPage(page + 1) }, enabled = page + 1 < (document?.pageCount ?: 0)) { Text("下一页") }
-                                    TextButton(onClick = { zoom = if (zoom == 1) 2 else 1 }) { Text(if (zoom == 1) "放大" else "适宽") }
+                                Surface(color = Color.White, shadowElevation = 1.dp) {
+                                    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
+                                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                            TextButton(onClick = { goToPage(page - 1) }, enabled = page > 0) { Text("上一页") }
+                                            Text("第 ${page + 1} / ${document?.pageCount ?: 0} 页", Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                                style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
+                                            TextButton(onClick = { goToPage(page + 1) }, enabled = page + 1 < (document?.pageCount ?: 0)) { Text("下一页") }
+                                        }
+                                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                                            TextButton(onClick = { showOutline = true }) { Text("目录") }
+                                            TextButton(onClick = { pageInput = (page + 1).toString(); showJump = true }) { Text("跳转页码") }
+                                            TextButton(onClick = { zoom = if (zoom == 1) 2 else 1 }) { Text(if (zoom == 1) "放大" else "适宽") }
+                                        }
+                                    }
                                 }
-                                Row {
-                                    TextButton(onClick = { showOutline = true }) { Text("目录") }
-                                    TextButton(onClick = { pageInput = (page + 1).toString(); showJump = true }) { Text("跳转页码") }
-                                }
-                                LazyColumn(state = pages, modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                LazyColumn(state = pages, modifier = Modifier.fillMaxSize().padding(top = 10.dp), contentPadding = PaddingValues(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                                     items(document?.pageCount ?: 0, key = { it }) { number -> PageImage(number, zoom) }
                                 }
                             }
@@ -170,12 +180,31 @@ class DocumentReaderActivity : ComponentActivity() {
                     title = { Text("PDF 目录") },
                     text = {
                         if (bookmarks.isEmpty()) Text(if (outlineError) "目录读取失败，仍可按页码跳转。" else "此 PDF 没有内嵌书签目录，可使用页码跳转。")
-                        else LazyColumn(Modifier.heightIn(max = 460.dp)) {
-                            items(bookmarks) { bookmark ->
-                                TextButton(onClick = { bookmark.page?.let(goToPage); showOutline = false }, enabled = bookmark.page != null,
-                                    modifier = Modifier.fillMaxWidth().padding(start = (bookmark.depth * 12).dp)) {
-                                    Text(bookmark.title, Modifier.weight(1f))
-                                    bookmark.page?.let { Text("${it + 1}") }
+                        else {
+                            val visible = remember(bookmarks, expandedBookmarks) {
+                                val result = mutableListOf<Int>()
+                                val open = mutableListOf<Boolean>()
+                                bookmarks.forEachIndexed { index, bookmark ->
+                                    while (open.size > bookmark.depth) open.removeAt(open.lastIndex)
+                                    if (bookmark.depth == 0 || open.all { it }) result += index
+                                    while (open.size <= bookmark.depth) open += false
+                                    open[bookmark.depth] = index in expandedBookmarks
+                                }
+                                result
+                            }
+                            LazyColumn(Modifier.heightIn(max = 460.dp)) {
+                                items(visible) { index ->
+                                    val bookmark = bookmarks[index]
+                                    val hasChildren = (bookmarks.getOrNull(index + 1)?.depth ?: -1) > bookmark.depth
+                                    Row(Modifier.fillMaxWidth().padding(start = (bookmark.depth * 12).dp), verticalAlignment = Alignment.CenterVertically) {
+                                        if (hasChildren) TextButton(onClick = { expandedBookmarks = if (index in expandedBookmarks) expandedBookmarks - index else expandedBookmarks + index }, modifier = Modifier.width(42.dp)) {
+                                            Text(if (index in expandedBookmarks) "⌄" else "›", style = MaterialTheme.typography.titleMedium)
+                                        } else Spacer(Modifier.width(42.dp))
+                                        TextButton(onClick = { bookmark.page?.let(goToPage); showOutline = false }, enabled = bookmark.page != null, modifier = Modifier.weight(1f)) {
+                                            Text(bookmark.title, Modifier.weight(1f), maxLines = 2)
+                                            bookmark.page?.let { Text("${it + 1}") }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -212,12 +241,14 @@ class DocumentReaderActivity : ComponentActivity() {
             } catch (e: kotlinx.coroutines.CancellationException) { throw e }
             catch (_: Exception) { failure = true }
         }
-        Box(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), contentAlignment = Alignment.TopCenter) {
+        Surface(Modifier.fillMaxWidth().padding(horizontal = 12.dp), color = Color.White, shadowElevation = 2.dp, shape = MaterialTheme.shapes.small) {
+        Box(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 8.dp), contentAlignment = Alignment.TopCenter) {
             val image = bitmap
             if (image != null) Image(image.asImageBitmap(), "第 ${number + 1} 页", Modifier.width((image.width / resources.displayMetrics.density).dp).height((image.height / resources.displayMetrics.density).dp))
             else Box(Modifier.fillMaxWidth().height(480.dp), contentAlignment = Alignment.Center) {
                 if (failure) Text("第 ${number + 1} 页加载失败") else CircularProgressIndicator()
             }
+        }
         }
     }
 
