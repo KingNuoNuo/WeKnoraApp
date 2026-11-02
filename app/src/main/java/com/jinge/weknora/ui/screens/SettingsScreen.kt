@@ -27,6 +27,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -79,6 +81,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun SettingsScreen(vm: AppViewModel) {
     var connectionExpanded by remember { mutableStateOf(false) }
+    var kbMenuExpanded by remember { mutableStateOf(false) }
     Column(
         Modifier
             .fillMaxSize()
@@ -92,59 +95,18 @@ fun SettingsScreen(vm: AppViewModel) {
             onRefresh = { vm.loadKbStats() }
         )
 
-        // 「全部知识库」：与顶栏菜单同一套语义，默认选中
-        Surface(
-            shape = MaterialTheme.shapes.medium,
-            color = if (vm.allKbsSelected) MaterialTheme.colorScheme.primaryContainer
-            else MaterialTheme.colorScheme.surface,
-            border = BorderStroke(
-                0.8.dp,
-                if (vm.allKbsSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
-                else MaterialTheme.colorScheme.outlineVariant
-            ),
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { vm.selectAllKb() }
-        ) {
-            Row(
-                Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        "全部知识库",
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Medium,
-                        color = if (vm.allKbsSelected) MaterialTheme.colorScheme.onPrimaryContainer
-                        else MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        "提问时同时检索 ${vm.knowledgeBases.size} 个库",
-                        Modifier.padding(top = 2.dp),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (vm.allKbsSelected)
-                            MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.72f)
-                        else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                if (vm.allKbsSelected) {
-                    Icon(
-                        Icons.Filled.Check,
-                        contentDescription = "当前范围",
-                        Modifier.size(17.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
+        Box(Modifier.fillMaxWidth()) {
+            val selectedLabel = if (vm.allKbsSelected) "全部知识库" else vm.currentKb?.name ?: "选择知识库"
+            OutlinedButton(onClick = { kbMenuExpanded = true }, modifier = Modifier.fillMaxWidth()) {
+                Text(selectedLabel, Modifier.weight(1f), textAlign = TextAlign.Start)
+                Text("⌄")
+            }
+            DropdownMenu(expanded = kbMenuExpanded, onDismissRequest = { kbMenuExpanded = false }, modifier = Modifier.fillMaxWidth(0.9f)) {
+                DropdownMenuItem(text = { Text("全部知识库") }, onClick = { vm.selectAllKb(); kbMenuExpanded = false }, trailingIcon = { if (vm.allKbsSelected) Icon(Icons.Filled.Check, null) })
+                vm.knowledgeBases.forEach { kb ->
+                    DropdownMenuItem(text = { Text(kb.name, maxLines = 1, overflow = TextOverflow.Ellipsis) }, onClick = { vm.selectKb(kb); kbMenuExpanded = false }, trailingIcon = { if (!vm.allKbsSelected && vm.currentKb?.id == kb.id) Icon(Icons.Filled.Check, null) })
                 }
             }
-        }
-
-        vm.knowledgeBases.forEach { kb ->
-            KbRow(
-                kb = kb,
-                stats = vm.kbStats[kb.id],
-                selected = !vm.allKbsSelected && vm.currentKb?.id == kb.id,
-                onClick = { vm.selectKb(kb) }
-            )
         }
 
         Row(
