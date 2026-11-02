@@ -131,25 +131,10 @@ fun SettingsScreen(vm: AppViewModel) {
                 }
                 InfoLine("当前文档", "${vm.docs.size} 篇", mono = true)
                 InfoLine("会话", "${vm.sessions.size} 个", mono = true)
+                OutlinedButton(onClick = { vm.editConfig() }, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) { Text("修改服务地址") }
+                OutlinedButton(onClick = { vm.logout() }, shape = MaterialTheme.shapes.medium, colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error), modifier = Modifier.fillMaxWidth()) { Text("退出登录") }
             }
         }
-
-        OutlinedButton(
-            onClick = { vm.editConfig() },
-            shape = MaterialTheme.shapes.medium,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 4.dp)
-        ) { Text("修改服务地址") }
-
-        OutlinedButton(
-            onClick = { vm.logout() },
-            shape = MaterialTheme.shapes.medium,
-            colors = ButtonDefaults.outlinedButtonColors(
-                contentColor = MaterialTheme.colorScheme.error
-            ),
-            modifier = Modifier.fillMaxWidth()
-        ) { Text("退出登录") }
 
         UpdateSection(vm)
 
