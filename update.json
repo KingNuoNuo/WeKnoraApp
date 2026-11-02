@@ -1,6 +1,6 @@
 {
-  "version": "1.1.22",
-  "version_code": 24,
-  "notes": "检查更新后直接下载 APK 并唤起系统安装，不再跳转 Release 页面",
-  "url": "https://github.com/KingNuoNuo/WeKnoraApp/releases/download/v1.1.22/app-release.apk"
+  "version": "1.1.23",
+  "version_code": 25,
+  "notes": "PDF 阅读器和目录重排；支持文档缓存、PPTX/HTML 阅读；设置页优化",
+  "url": "https://github.com/KingNuoNuo/WeKnoraApp/releases/download/v1.1.23/app-release.apk"
 }
