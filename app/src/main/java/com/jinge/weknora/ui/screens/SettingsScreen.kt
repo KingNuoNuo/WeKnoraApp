@@ -78,6 +78,7 @@ import kotlinx.coroutines.launch
  */
 @Composable
 fun SettingsScreen(vm: AppViewModel) {
+    var connectionExpanded by remember { mutableStateOf(false) }
     Column(
         Modifier
             .fillMaxSize()
@@ -146,9 +147,15 @@ fun SettingsScreen(vm: AppViewModel) {
             )
         }
 
-        SectionHeader(title = "连接信息", modifier = Modifier.padding(top = 10.dp))
+        Row(
+            Modifier.fillMaxWidth().padding(top = 10.dp).clickable { connectionExpanded = !connectionExpanded },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            SectionHeader(title = "连接信息", modifier = Modifier.weight(1f))
+            Text(if (connectionExpanded) "收起" else "展开", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+        }
 
-        Surface(
+        if (connectionExpanded) Surface(
             shape = MaterialTheme.shapes.large,
             color = MaterialTheme.colorScheme.surface,
             border = BorderStroke(0.8.dp, MaterialTheme.colorScheme.outlineVariant),
