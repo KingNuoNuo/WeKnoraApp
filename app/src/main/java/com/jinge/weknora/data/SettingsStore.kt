@@ -40,6 +40,16 @@ class SettingsStore(context: Context) {
         get() = prefs.getString(KEY_AGENT_ID, "") ?: ""
         set(v) = prefs.edit().putString(KEY_AGENT_ID, v).apply()
 
+    var defaultAgentId: String
+        get() = prefs.getString("default_agent_id", agentId).orEmpty()
+        set(v) = prefs.edit().putString("default_agent_id", v).apply()
+    var defaultModelId: String
+        get() = prefs.getString("default_model_id", "").orEmpty()
+        set(v) = prefs.edit().putString("default_model_id", v).apply()
+    var defaultReasoning: String
+        get() = prefs.getString("default_reasoning", "").orEmpty()
+        set(v) = prefs.edit().putString("default_reasoning", v).apply()
+
     /**
      * 更新源地址（update.json）。
      *

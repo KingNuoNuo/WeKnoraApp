@@ -30,6 +30,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -65,6 +66,9 @@ import com.jinge.weknora.ui.theme.monoStyle
 import com.jinge.weknora.ui.theme.onSuccessContainer
 import com.jinge.weknora.ui.theme.successContainer
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import com.jinge.weknora.data.REASONING_LEVELS
 
 /**
  * 设置页：切换/新建知识库、看当前连接、改连接参数。
@@ -88,6 +92,19 @@ fun SettingsScreen(vm: AppViewModel) {
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        SectionHeader(title = "对话默认选项")
+        Surface(shape = MaterialTheme.shapes.large, border = BorderStroke(0.8.dp, MaterialTheme.colorScheme.outlineVariant)) {
+            Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                DefaultChoice("智能体", vm.defaultAgentId,
+                    listOf("" to "知识库直答") + vm.agents.map { it.id to it.name }, vm::setDefaultAgent)
+                DefaultChoice("模型", vm.defaultModelId,
+                    listOf("" to "跟随知识库 / 智能体") + vm.chatModels.map { it.id to it.label }, vm::setDefaultModel)
+                DefaultChoice("推理", vm.defaultReasoning,
+                    REASONING_LEVELS.map { it.value to it.label }, vm::chooseDefaultReasoning)
+                Text("保存后立即生效，重启应用和新建会话时自动使用。对话页可临时调整；推理强度需模型支持。",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
         Row(
             Modifier.fillMaxWidth().padding(top = 10.dp).clickable { connectionExpanded = !connectionExpanded },
             verticalAlignment = Alignment.CenterVertically
@@ -119,6 +136,25 @@ fun SettingsScreen(vm: AppViewModel) {
 
         // 底部留白：最后一屏内容不该贴着导航栏
         Spacer(Modifier.size(20.dp))
+    }
+}
+
+@Composable
+private fun DefaultChoice(label: String, selected: String, choices: List<Pair<String, String>>, onSelect: (String) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box(Modifier.fillMaxWidth()) {
+        OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
+            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(choices.firstOrNull { it.first == selected }?.second ?: "已选配置暂不可用",
+                Modifier.weight(1f).padding(horizontal = 12.dp), maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End)
+            Text("⌄")
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, modifier = Modifier.fillMaxWidth(0.9f)) {
+            choices.forEach { (id, name) ->
+                DropdownMenuItem(text = { Text(name) }, onClick = { onSelect(id); expanded = false },
+                    trailingIcon = { if (id == selected) Icon(Icons.Filled.Check, contentDescription = "已选") })
+            }
+        }
     }
 }
 
@@ -348,12 +384,13 @@ private fun UpdateSection(vm: AppViewModel) {
     val scope = rememberCoroutineScope()
     var checking by remember { mutableStateOf(false) }
     var downloading by remember { mutableStateOf(false) }
+    var downloadProgress by remember { mutableStateOf(0L to -1L) }
     var downloadError by remember { mutableStateOf<String?>(null) }
     var result by remember { mutableStateOf<UpdateResult?>(null) }
     var editSource by remember { mutableStateOf(false) }
 
     fun runCheck() {
-        if (checking) return
+        if (checking || downloading) return
         checking = true
         result = null
         scope.launch {
@@ -420,10 +457,13 @@ private fun UpdateSection(vm: AppViewModel) {
                     onDownload = { url ->
                         if (downloading) return@UpdateResultBlock
                         downloading = true
+                        downloadProgress = 0L to -1L
                         downloadError = null
                         scope.launch {
                             runCatching {
-                                val file = UpdateDownloader.download(ctx, url)
+                                val file = UpdateDownloader.download(ctx, url) { done, total ->
+                                    withContext(Dispatchers.Main) { downloadProgress = done to total }
+                                }
                                 val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", file)
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !ctx.packageManager.canRequestPackageInstalls()) {
                                     ctx.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${ctx.packageName}")))
@@ -440,7 +480,17 @@ private fun UpdateSection(vm: AppViewModel) {
                 )
             }
 
-            if (downloading) Text("正在下载 APK…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (downloading) {
+                val (done, total) = downloadProgress
+                if (total > 0) LinearProgressIndicator(progress = { (done.toFloat() / total).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
+                else LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                val downloadedMb = String.format(java.util.Locale.ROOT, "%.1f", done / 1048576.0)
+                val details = if (total > 0) {
+                    val totalMb = String.format(java.util.Locale.ROOT, "%.1f", total / 1048576.0)
+                    "${(done * 100 / total).coerceIn(0, 100)}% · $downloadedMb / $totalMb MB"
+                } else "$downloadedMb MB · 总大小未知"
+                Text("正在下载 APK：$details", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             downloadError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 
         }

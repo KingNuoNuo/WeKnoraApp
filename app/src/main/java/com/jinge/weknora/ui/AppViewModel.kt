@@ -202,7 +202,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val agents = mutableStateListOf<Agent>()
     val models = mutableStateListOf<ModelInfo>()
     /** 空串 = 不用智能体，走 knowledge-chat */
-    var selectedAgentId by mutableStateOf(store.agentId)
+    var defaultAgentId by mutableStateOf(store.defaultAgentId.also { store.defaultAgentId = it })
+        private set
+    var defaultModelId by mutableStateOf(store.defaultModelId)
+        private set
+    var defaultReasoning by mutableStateOf(store.defaultReasoning)
+        private set
+    fun setDefaultAgent(id: String) { defaultAgentId = id; store.defaultAgentId = id; selectAgent(id) }
+    fun setDefaultModel(id: String) { defaultModelId = id; store.defaultModelId = id; selectedModelId = id }
+    fun chooseDefaultReasoning(value: String) { defaultReasoning = value; store.defaultReasoning = value; reasoningEffort = value }
+    var selectedAgentId by mutableStateOf(defaultAgentId)
         private set
 
     /** 选智能体并记住，下次启动直接恢复 */
@@ -211,9 +220,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         store.agentId = id
     }
     /** 空串 = 沿用知识库/智能体默认模型 */
-    var selectedModelId by mutableStateOf("")
+    var selectedModelId by mutableStateOf(defaultModelId)
     /** 空串 = 沿用智能体配置；否则 off/auto/minimal/low/medium/high/xhigh/max */
-    var reasoningEffort by mutableStateOf("")
+    var reasoningEffort by mutableStateOf(defaultReasoning)
     /**
      * 本轮是否允许联网搜索。默认关 —— 开了会明显变慢（实测同一问题 43s → 75s），
      * 应该是「需要时才打开」，而不是默认打开。
@@ -429,6 +438,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 val l = withContext(Dispatchers.IO) { apiNow().listModels() }
                 models.clear()
                 models.addAll(l)
+                if (selectedModelId.isNotBlank() && chatModels.none { it.id == selectedModelId }) selectedModelId = ""
             } catch (e: Exception) {
                 Log.w("WeKnora", "loadModels failed", e)
             }
@@ -662,6 +672,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         messages.clear()
         attachments.clear()
         snackText = "已开启新会话"
+        selectAgent(defaultAgentId.takeIf { id -> id.isEmpty() || agents.any { it.id == id } }.orEmpty())
+        selectedModelId = defaultModelId.takeIf { id -> id.isEmpty() || chatModels.any { it.id == id } }.orEmpty()
+        reasoningEffort = defaultReasoning
     }
 
     /**
