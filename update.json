@@ -1,6 +1,6 @@
 {
-  "version": "1.1.23",
-  "version_code": 25,
-  "notes": "PDF 阅读器和目录重排；支持文档缓存、PPTX/HTML 阅读；设置页优化",
-  "url": "https://github.com/KingNuoNuo/WeKnoraApp/releases/download/v1.1.23/app-release.apk"
+  "version": "1.1.25",
+  "version_code": 27,
+  "notes": "知识库文件夹改为下拉选择",
+  "url": "https://github.com/KingNuoNuo/WeKnoraApp/releases/download/v1.1.25/app-release.apk"
 }
