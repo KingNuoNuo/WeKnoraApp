@@ -165,22 +165,22 @@ class DocumentReaderActivity : ComponentActivity() {
                             )
                             else -> {
                                 Surface(color = Color.White, shadowElevation = 1.dp) {
-                                    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
-                                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                            TextButton(onClick = { goToPage(page - 1) }, enabled = page > 0) { Text("上一页") }
-                                            Text("第 ${page + 1} / ${document?.pageCount ?: 0} 页", Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                                style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
-                                            TextButton(onClick = { goToPage(page + 1) }, enabled = page + 1 < (document?.pageCount ?: 0)) { Text("下一页") }
+                                    Row(Modifier.fillMaxWidth().height(42.dp).padding(horizontal = 8.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                                            TextButton(onClick = { showOutline = true }, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)) { Text("目录") }
+                                            TextButton(onClick = { pageInput = (page + 1).toString(); showJump = true }, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)) { Text("跳转页码") }
+                                            TextButton(onClick = { zoom = if (zoom == 1) 2 else 1 }, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)) { Text(if (zoom == 1) "放大" else "适宽") }
                                         }
-                                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                                            TextButton(onClick = { showOutline = true }) { Text("目录") }
-                                            TextButton(onClick = { pageInput = (page + 1).toString(); showJump = true }) { Text("跳转页码") }
-                                            TextButton(onClick = { zoom = if (zoom == 1) 2 else 1 }) { Text(if (zoom == 1) "放大" else "适宽") }
-                                        }
-                                    }
                                 }
-                                LazyColumn(state = pages, modifier = Modifier.fillMaxSize().padding(top = 10.dp), contentPadding = PaddingValues(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                                LazyColumn(state = pages, modifier = Modifier.weight(1f).fillMaxWidth().padding(top = 6.dp), contentPadding = PaddingValues(bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     items(document?.pageCount ?: 0, key = { it }) { number -> PageImage(number, zoom) }
+                                }
+                                Surface(color = Color.White, shadowElevation = 4.dp) {
+                                    Row(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        TextButton(onClick = { goToPage(page - 1) }, enabled = page > 0, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)) { Text("上一页") }
+                                        Text("第 ${page + 1} / ${document?.pageCount ?: 0} 页", Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                            style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
+                                        TextButton(onClick = { goToPage(page + 1) }, enabled = page + 1 < (document?.pageCount ?: 0), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)) { Text("下一页") }
+                                    }
                                 }
                             }
                         }
