@@ -46,6 +46,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -261,35 +262,23 @@ private fun SearchRow(vm: AppViewModel) {
 /** 目录筛选条：全部 / 根目录 / 各目录，计数取自 folders 接口 */
 @Composable
 private fun FolderBar(vm: AppViewModel) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 12.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        FolderChip(
-            label = "全部",
-            count = if (vm.kbDocCount > 0) vm.kbDocCount else null,
-            selected = vm.currentFolder.isEmpty(),
-            onClick = { vm.selectFolder("") }
-        )
-        // 只有确实有根目录文档时才出现，避免点进去是空的
-        if (vm.rootDocCount > 0) {
-            FolderChip(
-                label = "根目录",
-                count = vm.rootDocCount,
-                selected = vm.currentFolder == "/",
-                onClick = { vm.selectFolder("/") }
-            )
+    var expanded by remember { mutableStateOf(false) }
+    val selected = when {
+        vm.currentFolder.isEmpty() -> "全部"
+        vm.currentFolder == "/" -> "根目录"
+        else -> vm.folders.firstOrNull { it.path == vm.currentFolder }?.shownName ?: vm.currentFolder
+    }
+    Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+        OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Filled.Folder, null, Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(selected, Modifier.weight(1f), maxLines = 1)
+            Text("⌄")
         }
-        vm.folders.forEach { f ->
-            FolderChip(
-                label = f.shownName,
-                count = f.shownCount,
-                selected = vm.currentFolder == f.path,
-                onClick = { vm.selectFolder(f.path) }
-            )
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, modifier = Modifier.fillMaxWidth(0.9f)) {
+            DropdownMenuItem(text = { Text("全部 · ${vm.kbDocCount}") }, onClick = { vm.selectFolder(""); expanded = false })
+            if (vm.rootDocCount > 0) DropdownMenuItem(text = { Text("根目录 · ${vm.rootDocCount}") }, onClick = { vm.selectFolder("/"); expanded = false })
+            vm.folders.forEach { f -> DropdownMenuItem(text = { Text("${f.shownName} · ${f.shownCount}", maxLines = 1) }, onClick = { vm.selectFolder(f.path); expanded = false }) }
         }
     }
 }
