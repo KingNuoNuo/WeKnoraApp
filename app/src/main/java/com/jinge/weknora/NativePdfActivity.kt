@@ -129,9 +129,31 @@ class NativePdfActivity : FragmentActivity() {
         } }; dialog.show()
     }
     private fun outline() {
+        val dialog = android.app.Dialog(this)
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.WHITE)
+        }
+        val header = LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), 0, dp(4), 0)
+        }
+        header.addView(TextView(this).apply {
+            text = "文档目录"; textSize = 16f
+            setTextColor(0xff243b35.toInt()); includeFontPadding = false
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        header.addView(button("关闭") { dialog.dismiss() }, LinearLayout.LayoutParams(-2, -1))
+        panel.addView(header, LinearLayout.LayoutParams(-1, dp(44)))
+        panel.addView(View(this).apply { setBackgroundColor(0xffe6ebe9.toInt()) }, LinearLayout.LayoutParams(-1, dp(1)))
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val scroll = ScrollView(this).apply { addView(list) }
-        val dialog = MaterialAlertDialogBuilder(this).setTitle("文档目录").setView(scroll).setNegativeButton("关闭",null).create()
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            setPadding(dp(4), dp(2), dp(4), dp(4))
+            addView(list)
+        }
+        panel.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        dialog.setContentView(panel)
         fun rows() {
             list.removeAllViews()
             val ancestors = mutableListOf<Int>()
@@ -139,17 +161,38 @@ class NativePdfActivity : FragmentActivity() {
                 while(ancestors.size > mark.depth) ancestors.removeAt(ancestors.lastIndex)
                 val visible = ancestors.all { it in expanded }
                 if(visible) {
-                    val row = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(8+mark.depth*10),0,dp(12),0) }
+                    val row = LinearLayout(this).apply {
+                        gravity = Gravity.CENTER_VERTICAL
+                        minimumHeight = dp(40)
+                        setPadding(dp(4+mark.depth.coerceAtMost(6)*8),0,dp(8),0)
+                    }
                     val children = (bookmarks.getOrNull(index+1)?.depth ?: -1) > mark.depth
                     if(children) row.addView(button(if(index in expanded) "⌄" else "›") {
-                        if(!expanded.add(index)) expanded.remove(index); rows()
-                    }, LinearLayout.LayoutParams(dp(40),dp(44)))
-                    else row.addView(Space(this), LinearLayout.LayoutParams(dp(40),1))
+                        val position = scroll.scrollY
+                        if(!expanded.add(index)) expanded.remove(index)
+                        rows()
+                        scroll.post { scroll.scrollTo(0, position) }
+                    }.apply {
+                        setPadding(0,0,0,0)
+                        contentDescription = if(index in expanded) "收起 ${mark.title}" else "展开 ${mark.title}"
+                    }, LinearLayout.LayoutParams(dp(32),dp(40)))
+                    else row.addView(Space(this), LinearLayout.LayoutParams(dp(8),1))
                     row.addView(TextView(this).apply {
                         text = mark.title; textSize = 14f; setTextColor(0xff243b35.toInt()); maxLines = 2
-                        setPadding(0,dp(6),dp(8),dp(6)); setOnClickListener { mark.page?.let { navigate(it); dialog.dismiss() } }
+                        includeFontPadding = false
+                        ellipsize = android.text.TextUtils.TruncateAt.END
+                        setLineSpacing(0f, 1f)
+                        gravity = Gravity.CENTER_VERTICAL
+                        minimumHeight = dp(40)
+                        setPadding(0,dp(3),dp(6),dp(3)); setOnClickListener { mark.page?.let { navigate(it); dialog.dismiss() } }
                     }, LinearLayout.LayoutParams(0,-2,1f))
-                    row.addView(TextView(this).apply { text = mark.page?.let { "${it+1}" }.orEmpty(); textSize = 12f; setOnClickListener { mark.page?.let { navigate(it); dialog.dismiss() } } })
+                    row.addView(TextView(this).apply {
+                        text = mark.page?.let { "${it+1}" }.orEmpty(); textSize = 12f
+                        setTextColor(0xff6b7774.toInt()); includeFontPadding = false
+                        gravity = Gravity.CENTER_VERTICAL or Gravity.END
+                        minWidth = dp(32); minimumHeight = dp(40)
+                        setOnClickListener { mark.page?.let { navigate(it); dialog.dismiss() } }
+                    })
                     list.addView(row)
                 }
                 ancestors.add(index)
@@ -157,7 +200,11 @@ class NativePdfActivity : FragmentActivity() {
             if(bookmarks.isEmpty()) list.addView(TextView(this).apply { text = "此文档没有可用书签，可使用页码跳转。"; setPadding(dp(24),dp(24),dp(24),dp(24)) })
         }
         rows(); dialog.show()
-        dialog.window?.setLayout((resources.displayMetrics.widthPixels * .94).toInt(), (resources.displayMetrics.heightPixels * .86).toInt())
+        dialog.window?.apply {
+            setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+            val bounds = windowManager.currentWindowMetrics.bounds
+            setLayout((bounds.width() * .98).toInt(), (bounds.height() * .94).toInt())
+        }
     }
     private fun zoom() {
         MaterialAlertDialogBuilder(this).setTitle("缩放").setItems(arrayOf("适合宽度","100%","150%","200%")) { _, which ->
