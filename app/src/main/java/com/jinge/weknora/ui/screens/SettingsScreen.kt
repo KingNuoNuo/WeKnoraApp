@@ -464,25 +464,6 @@ private fun UpdateSection(vm: AppViewModel) {
             if (downloading) Text("正在下载 APK…", color = MaterialTheme.colorScheme.onSurfaceVariant)
             downloadError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        "更新源",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        vm.updateUrlInput.substringAfter("://"),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                TextButton(onClick = { editSource = true }) { Text("修改") }
-            }
         }
     }
 
