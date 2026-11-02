@@ -22,6 +22,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.WeKnora">
         <activity android:name=".DocumentReaderActivity" android:exported="false" />
+        <activity android:name=".NativePdfActivity" android:exported="false" android:theme="@style/Theme.WeKnora.Reader" />
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

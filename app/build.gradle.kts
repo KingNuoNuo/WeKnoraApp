@@ -7,12 +7,12 @@ plugins {
 
 android {
     namespace = "com.jinge.weknora"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.jinge.weknora"
-        minSdk = 26
-        targetSdk = 34
+        minSdk = 35
+        targetSdk = 35
         // 每次出包都要往上加，别偷懒复用同一个号。
         //
         // 踩过的坑：一直停在 versionCode=1 时，覆盖安装后启动器**不会**刷新图标缓存
@@ -24,8 +24,8 @@ android {
         // 递增规则：versionCode 每次编译 +1；versionName **只动末位**
         // （1.1.1 → 1.1.2 → …），前两位只在正式发版时手动动。
         // 每次编译完要同步在对话里给一份 release note，并追加到 CHANGELOG.md。
-        versionCode = 27
-        versionName = "1.1.25"
+        versionCode = 28
+        versionName = "1.1.26"
     }
 
     // release 也用 debug 签名：装到手机上即可用，省去配置 keystore 的麻烦。
@@ -76,6 +76,8 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.6")
     implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.pdf:pdf-viewer-fragment:1.0.0-alpha08")
+    implementation("androidx.fragment:fragment-ktx:1.8.5")
 
     // 网络：OkHttp 直接手写请求。不用 Retrofit —— SSE 流式响应本来就要自己
     // 读 Source，统一用 OkHttp 反而少一层抽象和依赖。

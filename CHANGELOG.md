@@ -1,5 +1,11 @@
 # 更新日志
 
+## [1.1.26] · 2026-11-02 · versionCode 28
+
+- 最低支持 Android 15（API 35），不再支持旧系统。
+- PDF 切换到官方 Jetpack PdfViewerFragment，提供连续阅读、缩放、文字选择与搜索。
+- 移除旧 PdfRenderer 页面界面，保留鉴权下载和文档缓存。
+
 WeKnora 安卓客户端（`com.jinge.weknora`）出包记录。
 
 **放版规则**：`versionCode` 每次编译 +1；`versionName` **只动末位**

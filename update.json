@@ -1,6 +1,6 @@
 {
-  "version": "1.1.25",
-  "version_code": 27,
-  "notes": "知识库文件夹改为下拉选择",
-  "url": "https://github.com/KingNuoNuo/WeKnoraApp/releases/download/v1.1.25/app-release.apk"
+  "version": "1.1.26",
+  "version_code": 28,
+  "notes": "最低支持 Android 15；PDF 切换到官方 Jetpack 阅读器，支持搜索和文字选择",
+  "url": "https://github.com/KingNuoNuo/WeKnoraApp/releases/download/v1.1.26/app-release.apk"
 }
