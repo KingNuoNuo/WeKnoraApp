@@ -262,6 +262,7 @@ private fun MainScaffold(vm: AppViewModel) {
                             color = Brand.OnTopBar.copy(alpha = Brand.ON_TOP_BAR_SECONDARY_ALPHA)
                         )
                     }
+                    if (tab == Tab.CHAT) {
                     TopBarAction(Icons.Filled.AddComment, "新会话") { vm.newSession() }
                     Spacer(Modifier.width(8.dp))
                     TopBarAction(Icons.Filled.History, "会话历史") { showHistory = true }
@@ -292,6 +293,7 @@ private fun MainScaffold(vm: AppViewModel) {
                                 )
                             }
                         }
+                    }
                     }
                 }
             }
