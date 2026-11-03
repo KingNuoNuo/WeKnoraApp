@@ -669,13 +669,13 @@ private fun ThinkingBlock(messageId: String, thinking: String) {
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(bottom = 8.dp)
+            .padding(bottom = 6.dp)
     ) {
-        Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+        Column(Modifier.padding(horizontal = 10.dp, vertical = 2.dp)) {
             Row(
                 Modifier.fillMaxWidth()
                     .toggleable(value = expanded, role = Role.Button, onValueChange = { expanded = it })
-                    .heightIn(min = 48.dp),
+                    .heightIn(min = 32.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
