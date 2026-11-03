@@ -12,6 +12,11 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -204,7 +209,9 @@ private fun MainScaffold(vm: AppViewModel) {
         }
     }
 
+    val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     Scaffold(
+        modifier = Modifier.imePadding(),
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackHost) },
         // 顶栏不用 TopAppBar：它的高度锁死 56/64dp，两行标题会被裁，
@@ -286,6 +293,7 @@ private fun MainScaffold(vm: AppViewModel) {
             }
         },
         bottomBar = {
+            if (!keyboardVisible) {
             Column {
                 // 一根发丝线代替阴影：导航栏和白页面之间需要一道「到此为止」
                 HorizontalDivider(
@@ -313,9 +321,10 @@ private fun MainScaffold(vm: AppViewModel) {
                     }
                 }
             }
+            }
         }
     ) { pad ->
-        Box(Modifier.fillMaxSize().padding(pad)) {
+        Box(Modifier.fillMaxSize().padding(pad).consumeWindowInsets(pad)) {
             // 切页淡入淡出，不再是硬切
             Crossfade(targetState = tab, animationSpec = tween(180), label = "tab") { t ->
                 when (t) {

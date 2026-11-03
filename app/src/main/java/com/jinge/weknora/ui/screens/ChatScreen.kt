@@ -18,8 +18,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -32,6 +30,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -61,8 +61,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -150,8 +148,6 @@ fun ChatScreen(
             .fillMaxSize()
             // 不显式刷底色：Scaffold 的 containerColor 本来就是 background，
             // 其他三个页面都没重刷，这里再涂一层只是多一道绘制指令
-            .imePadding()
-            .navigationBarsPadding()
     ) {
         OptionBar(vm)
 
@@ -846,7 +842,7 @@ private fun Composer(
     onSend: () -> Unit
 ) {
     Surface(color = MaterialTheme.colorScheme.surface) {
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+        Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
             // 已挂上的附件：可单独移除，随下一条提问一起发出
             if (vm.attachments.isNotEmpty()) {
                 Row(
@@ -867,7 +863,7 @@ private fun Composer(
                 // 一行里只放一个回形针，说明文字还占了半屏宽
                 Box(
                     Modifier
-                        .size(48.dp)
+                        .size(40.dp)
                         .clip(MaterialTheme.shapes.medium)
                         .background(MaterialTheme.colorScheme.surfaceContainerLow)
                         .border(
@@ -881,59 +877,56 @@ private fun Composer(
                     Icon(
                         Icons.Outlined.AttachFile,
                         contentDescription = "添加附件",
-                        Modifier.size(20.dp),
+                        Modifier.size(18.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
-                Spacer(Modifier.size(8.dp))
+                Spacer(Modifier.size(6.dp))
 
-                OutlinedTextField(
+                BasicTextField(
                     value = draft,
                     onValueChange = onDraftChange,
                     modifier = Modifier
                         .weight(1f)
-                        .heightIn(min = 48.dp, max = 150.dp),
-                    placeholder = {
-                        Text(
-                            "提问…",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
-                    // 输入框统一 medium(12)，与搜索条、列表卡片同一档
-                    shape = MaterialTheme.shapes.medium,
-                    maxLines = 6,
-                    textStyle = MaterialTheme.typography.bodyLarge,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                        focusedContainerColor = MaterialTheme.colorScheme.surface,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surface
-                    )
+                        .heightIn(min = 40.dp, max = 120.dp)
+                        .clip(MaterialTheme.shapes.medium)
+                        .border(1.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.medium)
+                        .padding(horizontal = 12.dp, vertical = 9.dp),
+                    maxLines = 5,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    decorationBox = { inner ->
+                        Box {
+                            if (draft.isEmpty()) Text("提问…", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            inner()
+                        }
+                    }
                 )
 
-                Spacer(Modifier.size(8.dp))
+                Spacer(Modifier.size(6.dp))
 
                 if (vm.streaming) {
                     FilledIconButton(
                         onClick = { vm.stopStreaming() },
-                        modifier = Modifier.size(48.dp),
+                        modifier = Modifier.size(40.dp),
                         colors = IconButtonDefaults.filledIconButtonColors(
                             containerColor = MaterialTheme.colorScheme.errorContainer,
                             contentColor = MaterialTheme.colorScheme.onErrorContainer
                         )
                     ) {
-                        Icon(Icons.Filled.Stop, contentDescription = "停止生成")
+                        Icon(Icons.Filled.Stop, contentDescription = "停止生成", modifier = Modifier.size(20.dp))
                     }
                 } else {
                     FilledIconButton(
                         onClick = onSend,
-                        modifier = Modifier.size(48.dp),
+                        modifier = Modifier.size(40.dp),
                         enabled = draft.isNotBlank()
                     ) {
                         Icon(
                             Icons.AutoMirrored.Filled.Send,
-                            contentDescription = "发送"
+                            contentDescription = "发送",
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }
