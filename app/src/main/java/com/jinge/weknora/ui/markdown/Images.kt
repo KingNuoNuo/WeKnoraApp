@@ -110,12 +110,13 @@ fun MarkdownImage(
     val base = LocalApiBase.current
     val src = remember(url, base) { resolveImageUrl(url, base) }
     if (src.isBlank()) return
+    val context = LocalContext.current
+    val request = remember(context, src) {
+        ImageRequest.Builder(context).data(src).crossfade(true).build()
+    }
 
     SubcomposeAsyncImage(
-        model = ImageRequest.Builder(LocalContext.current)
-            .data(src)
-            .crossfade(true)
-            .build(),
+        model = request,
         imageLoader = LocalAppImageLoader.current ?: LocalContext.current.imageLoader,
         contentDescription = alt.ifBlank { "知识库图片" },
         contentScale = ContentScale.Fit,

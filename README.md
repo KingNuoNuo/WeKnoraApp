@@ -13,7 +13,7 @@ Android client for a self-hosted WeKnora knowledge base — browse, chat with RA
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.1.20-7F52FF?logo=kotlin&logoColor=white)](#)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?logo=jetpackcompose&logoColor=white)](#)
 [![minSdk](https://img.shields.io/badge/minSdk-35-blue)](#)
-[![Version](https://img.shields.io/badge/version-1.1.30-0F6B63)](#)
+[![Version](https://img.shields.io/badge/version-1.1.31-0F6B63)](#)
 
 </div>
 
@@ -100,7 +100,7 @@ app/src/main/java/com/jinge/weknora/
 
 ## 更新日志
 
-见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **1.1.30**（versionCode 32）。
+见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **1.1.31**（versionCode 33）。
 
 ## 更新机制
 

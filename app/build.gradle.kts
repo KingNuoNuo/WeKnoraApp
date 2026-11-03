@@ -25,8 +25,8 @@ android {
         // 递增规则：versionCode 每次编译 +1；versionName **只动末位**
         // （1.1.1 → 1.1.2 → …），前两位只在正式发版时手动动。
         // 每次编译完要同步在对话里给一份 release note，并追加到 CHANGELOG.md。
-        versionCode = 32
-        versionName = "1.1.30"
+        versionCode = 33
+        versionName = "1.1.31"
     }
 
     // release 也用 debug 签名：装到手机上即可用，省去配置 keystore 的麻烦。
@@ -37,7 +37,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"),
                           "proguard-rules.pro")
             signingConfig = signingConfigs.getByName("debug")

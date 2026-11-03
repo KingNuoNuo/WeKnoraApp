@@ -60,6 +60,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -132,6 +133,9 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
 
     // 图片地址可能是相对路径（`/api/v1/files/…`），把服务地址往下传一层，
     // 由 ui/markdown/Images.kt 负责拼成绝对地址
+    DisposableEffect(imageLoader) {
+        onDispose { imageLoader.shutdown() }
+    }
     CompositionLocalProvider(
         LocalApiBase provides base,
         LocalAppImageLoader provides imageLoader

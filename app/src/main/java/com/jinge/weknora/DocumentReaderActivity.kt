@@ -74,6 +74,7 @@ class DocumentReaderActivity : ComponentActivity() {
                         startActivity(Intent(this@DocumentReaderActivity, NativePdfActivity::class.java)
                             .setData(FileProvider.getUriForFile(this@DocumentReaderActivity, "$packageName.fileprovider", file))
                             .putExtra("title", intent.getStringExtra("title"))
+                            .putExtra("cached_path", file.absolutePath)
                             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
                         finish()
                     } else html = withContext(Dispatchers.IO) { when(intent.getStringExtra("format")) {

@@ -1,6 +1,6 @@
 {
-  "version": "1.1.30",
-  "version_code": 32,
-  "notes": "压缩思考过程栏和输入栏，修复键盘弹出时底部重复留白",
-  "url": "https://github.com/KingNuoNuo/WeKnoraApp/releases/download/v1.1.30/app-release.apk"
+  "version": "1.1.31",
+  "version_code": 33,
+  "notes": "启用代码和资源裁剪，减小 APK；优化 PDF 目录、图片和 PPTX 解析开销",
+  "url": "https://github.com/KingNuoNuo/WeKnoraApp/releases/download/v1.1.31/app-release.apk"
 }

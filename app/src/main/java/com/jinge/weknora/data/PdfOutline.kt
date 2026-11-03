@@ -12,9 +12,12 @@ import java.util.IdentityHashMap
 data class PdfBookmark(val title: String, val page: Int?, val depth: Int)
 
 object PdfOutline {
+    private val outlines = android.util.LruCache<String, List<PdfBookmark>>(8)
     fun read(context: Context, file: File): List<PdfBookmark> {
+        val key = "${file.canonicalPath}:${file.length()}:${file.lastModified()}"
+        outlines.get(key)?.let { return it }
         PDFBoxResourceLoader.init(context.applicationContext)
-        return PDDocument.load(file, MemoryUsageSetting.setupTempFileOnly().setTempDir(context.cacheDir)).use { document ->
+        val outline = PDDocument.load(file, MemoryUsageSetting.setupTempFileOnly().setTempDir(context.cacheDir)).use { document ->
             val result = mutableListOf<PdfBookmark>()
             val visited = Collections.newSetFromMap(IdentityHashMap<Any, Boolean>())
             fun visit(first: PDOutlineItem?, depth: Int) {
@@ -32,5 +35,7 @@ object PdfOutline {
             visit(document.documentCatalog.documentOutline?.firstChild, 0)
             result
         }
+        outlines.put(key, outline)
+        return outline
     }
 }

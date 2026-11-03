@@ -96,11 +96,13 @@ class NativePdfActivity : FragmentActivity() {
         }
         lifecycleScope.launch {
             bookmarks = withContext(Dispatchers.IO) {
-                val file = File.createTempFile("outline-", ".pdf", cacheDir)
+                val source = intent.getStringExtra("cached_path")?.let { File(it).canonicalFile }
+                    ?.takeIf { it.parentFile == cacheDir.canonicalFile && it.isFile }
+                val file = source ?: File.createTempFile("outline-", ".pdf", cacheDir)
                 try {
-                    contentResolver.openInputStream(intent.data!!)!!.use { input -> file.outputStream().use { input.copyTo(it) } }
+                    if (source == null) contentResolver.openInputStream(intent.data!!)!!.use { input -> file.outputStream().use { input.copyTo(it) } }
                     PdfOutline.read(this@NativePdfActivity,file)
-                } catch(_: Exception) { emptyList() } finally { file.delete() }
+                } catch(_: Exception) { emptyList() } finally { if (source == null) file.delete() }
             }
         }
     }
@@ -146,60 +148,83 @@ class NativePdfActivity : FragmentActivity() {
         header.addView(button("关闭") { dialog.dismiss() }, LinearLayout.LayoutParams(-2, -1))
         panel.addView(header, LinearLayout.LayoutParams(-1, dp(44)))
         panel.addView(View(this).apply { setBackgroundColor(0xffe6ebe9.toInt()) }, LinearLayout.LayoutParams(-1, dp(1)))
-        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val scroll = ScrollView(this).apply {
-            isFillViewport = true
+        val list = ListView(this).apply {
+            divider = null
             setPadding(dp(4), dp(2), dp(4), dp(4))
-            addView(list)
+            clipToPadding = false
         }
-        panel.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        panel.addView(list, LinearLayout.LayoutParams(-1, 0, 1f))
         dialog.setContentView(panel)
-        fun rows() {
-            list.removeAllViews()
+        val visible = mutableListOf<Int>()
+        fun rebuild() {
+            visible.clear()
             val ancestors = mutableListOf<Int>()
             bookmarks.forEachIndexed { index, mark ->
-                while(ancestors.size > mark.depth) ancestors.removeAt(ancestors.lastIndex)
-                val visible = ancestors.all { it in expanded }
-                if(visible) {
-                    val row = LinearLayout(this).apply {
-                        gravity = Gravity.CENTER_VERTICAL
-                        minimumHeight = dp(40)
-                        setPadding(dp(4+mark.depth.coerceAtMost(6)*8),0,dp(8),0)
+                while (ancestors.size > mark.depth) ancestors.removeAt(ancestors.lastIndex)
+                if (ancestors.all { it in expanded }) visible += index
+                ancestors += index
+            }
+        }
+        class Holder(val arrow: MaterialButton, val title: TextView, val page: TextView)
+        val adapter = object : BaseAdapter() {
+            override fun getCount() = visible.size
+            override fun getItem(position: Int) = bookmarks[visible[position]]
+            override fun getItemId(position: Int) = visible[position].toLong()
+            override fun hasStableIds() = true
+            override fun getView(position: Int, convertView: View?, parent: android.view.ViewGroup): View {
+                val row = convertView as? LinearLayout ?: LinearLayout(this@NativePdfActivity).apply {
+                    gravity = Gravity.CENTER_VERTICAL
+                    minimumHeight = dp(40)
+                    val arrow = button("") {}.apply { setPadding(0,0,0,0) }
+                    val title = TextView(this@NativePdfActivity).apply {
+                        textSize = 14f; setTextColor(0xff243b35.toInt()); maxLines = 2
+                        includeFontPadding = false; ellipsize = android.text.TextUtils.TruncateAt.END
+                        setLineSpacing(0f,1f); gravity = Gravity.CENTER_VERTICAL
+                        minimumHeight = dp(40); setPadding(0,dp(3),dp(6),dp(3))
                     }
-                    val children = (bookmarks.getOrNull(index+1)?.depth ?: -1) > mark.depth
-                    if(children) row.addView(button(if(index in expanded) "⌄" else "›") {
-                        val position = scroll.scrollY
-                        if(!expanded.add(index)) expanded.remove(index)
-                        rows()
-                        scroll.post { scroll.scrollTo(0, position) }
-                    }.apply {
-                        setPadding(0,0,0,0)
-                        contentDescription = if(index in expanded) "收起 ${mark.title}" else "展开 ${mark.title}"
-                    }, LinearLayout.LayoutParams(dp(32),dp(40)))
-                    else row.addView(Space(this), LinearLayout.LayoutParams(dp(8),1))
-                    row.addView(TextView(this).apply {
-                        text = mark.title; textSize = 14f; setTextColor(0xff243b35.toInt()); maxLines = 2
-                        includeFontPadding = false
-                        ellipsize = android.text.TextUtils.TruncateAt.END
-                        setLineSpacing(0f, 1f)
-                        gravity = Gravity.CENTER_VERTICAL
-                        minimumHeight = dp(40)
-                        setPadding(0,dp(3),dp(6),dp(3)); setOnClickListener { mark.page?.let { navigate(it); dialog.dismiss() } }
-                    }, LinearLayout.LayoutParams(0,-2,1f))
-                    row.addView(TextView(this).apply {
-                        text = mark.page?.let { "${it+1}" }.orEmpty(); textSize = 12f
-                        setTextColor(0xff6b7774.toInt()); includeFontPadding = false
+                    val page = TextView(this@NativePdfActivity).apply {
+                        textSize = 12f; setTextColor(0xff6b7774.toInt()); includeFontPadding = false
                         gravity = Gravity.CENTER_VERTICAL or Gravity.END
                         minWidth = dp(32); minimumHeight = dp(40)
-                        setOnClickListener { mark.page?.let { navigate(it); dialog.dismiss() } }
-                    })
-                    list.addView(row)
+                    }
+                    addView(arrow, LinearLayout.LayoutParams(dp(32),dp(40)))
+                    addView(title, LinearLayout.LayoutParams(0,-2,1f))
+                    addView(page)
+                    tag = Holder(arrow,title,page)
                 }
-                ancestors.add(index)
+                val index = visible[position]
+                val mark = bookmarks[index]
+                val holder = row.tag as Holder
+                val children = (bookmarks.getOrNull(index+1)?.depth ?: -1) > mark.depth
+                row.setPadding(dp(4+mark.depth.coerceAtMost(6)*8),0,dp(8),0)
+                holder.arrow.visibility = if(children) View.VISIBLE else View.INVISIBLE
+                holder.arrow.layoutParams.width = dp(if(children) 32 else 8)
+                holder.arrow.text = if(index in expanded) "⌄" else "›"
+                holder.arrow.contentDescription = if(index in expanded) "收起 ${mark.title}" else "展开 ${mark.title}"
+                holder.arrow.setOnClickListener {
+                    val top = list.firstVisiblePosition
+                    val offset = list.getChildAt(0)?.top ?: 0
+                    if(!expanded.add(index)) expanded.remove(index)
+                    rebuild(); notifyDataSetChanged()
+                    list.setSelectionFromTop(top,offset)
+                }
+                holder.title.text = mark.title
+                holder.page.text = mark.page?.let { "${it+1}" }.orEmpty()
+                val jump = View.OnClickListener { mark.page?.let { navigate(it); dialog.dismiss() } }
+                holder.title.setOnClickListener(jump); holder.page.setOnClickListener(jump)
+                return row
             }
-            if(bookmarks.isEmpty()) list.addView(TextView(this).apply { text = "此文档没有可用书签，可使用页码跳转。"; setPadding(dp(24),dp(24),dp(24),dp(24)) })
         }
-        rows(); dialog.show()
+        rebuild()
+        list.adapter = adapter
+        if(bookmarks.isEmpty()) {
+            list.emptyView = TextView(this).apply {
+                text = "此文档没有可用书签，可使用页码跳转。"
+                setPadding(dp(16),dp(16),dp(16),dp(16))
+                panel.addView(this)
+            }
+        }
+        dialog.show()
         dialog.window?.apply {
             setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
             val bounds = windowManager.currentWindowMetrics.bounds
