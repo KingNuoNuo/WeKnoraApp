@@ -1,6 +1,6 @@
 {
-  "version": "1.1.32",
-  "version_code": 34,
-  "notes": "顶栏三个对话按钮仅在对话页显示，其他页面隐藏；保留 APK 裁剪优化",
-  "url": "https://github.com/KingNuoNuo/WeKnoraApp/releases/download/v1.1.32/app-release.apk"
+  "version": "1.1.33",
+  "version_code": 35,
+  "notes": "恢复所有页面的知识库切换按钮；新会话与会话历史仅在对话页显示",
+  "url": "https://github.com/KingNuoNuo/WeKnoraApp/releases/download/v1.1.33/app-release.apk"
 }
