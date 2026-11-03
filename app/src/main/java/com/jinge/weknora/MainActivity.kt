@@ -263,10 +263,11 @@ private fun MainScaffold(vm: AppViewModel) {
                         )
                     }
                     if (tab == Tab.CHAT) {
-                    TopBarAction(Icons.Filled.AddComment, "新会话") { vm.newSession() }
-                    Spacer(Modifier.width(8.dp))
-                    TopBarAction(Icons.Filled.History, "会话历史") { showHistory = true }
-                    Spacer(Modifier.width(8.dp))
+                        TopBarAction(Icons.Filled.AddComment, "新会话") { vm.newSession() }
+                        Spacer(Modifier.width(8.dp))
+                        TopBarAction(Icons.Filled.History, "会话历史") { showHistory = true }
+                        Spacer(Modifier.width(8.dp))
+                    }
                     Box {
                         TopBarAction(Icons.Filled.SwapHoriz, "切换知识库") { kbMenu = true }
                         DropdownMenu(
@@ -293,7 +294,6 @@ private fun MainScaffold(vm: AppViewModel) {
                                 )
                             }
                         }
-                    }
                     }
                 }
             }
