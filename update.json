@@ -1,6 +1,6 @@
 {
-  "version": "1.1.31",
-  "version_code": 33,
-  "notes": "启用代码和资源裁剪，减小 APK；优化 PDF 目录、图片和 PPTX 解析开销",
-  "url": "https://github.com/KingNuoNuo/WeKnoraApp/releases/download/v1.1.31/app-release.apk"
+  "version": "1.1.32",
+  "version_code": 34,
+  "notes": "顶栏三个对话按钮仅在对话页显示，其他页面隐藏；保留 APK 裁剪优化",
+  "url": "https://github.com/KingNuoNuo/WeKnoraApp/releases/download/v1.1.32/app-release.apk"
 }
