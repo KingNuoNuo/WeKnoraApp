@@ -33,7 +33,6 @@ jobs:
           packages: |-
             platform-tools
             platforms;android-36
-            platforms;android-36-ext19
             build-tools;36.0.0
 
       - name: Run unit tests
