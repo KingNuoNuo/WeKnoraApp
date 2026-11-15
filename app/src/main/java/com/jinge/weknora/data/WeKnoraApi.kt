@@ -1,16 +1,11 @@
 package com.jinge.weknora.data
 
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.awaitCancellation
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
+import android.net.Network
+import java.io.IOException
+import java.io.InputStream
+import java.net.InetAddress
+import java.net.UnknownHostException
+import java.util.concurrent.CopyOnWriteArraySet
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -22,6 +17,8 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
+import okhttp3.ConnectionPool
+import okhttp3.Dns
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
@@ -30,9 +27,18 @@ import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okio.BufferedSink
 import okio.source
-import java.io.IOException
-import java.io.InputStream
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 class ApiException(message: String, val code: Int = 0) : Exception(message)
 
@@ -100,6 +106,37 @@ data class RefreshResult(
 class WeKnoraApi(private val cfg: ConnectionConfig) {
 
     companion object {
+        /**
+         * A network handoff (Wi-Fi ↔ mobile) invalidates pooled TCP/TLS sockets and
+         * may change DNS answers. Resolve through Android's current default Network
+         * and evict every app-owned OkHttp pool when ConnectivityManager reports a
+         * handoff, so the next request doesn't keep reusing the old route.
+         */
+        private object ActiveNetworkDns : Dns {
+            @Volatile var network: Network? = null
+
+            override fun lookup(hostname: String): List<InetAddress> {
+                val current = network ?: return Dns.SYSTEM.lookup(hostname)
+                val addresses = current.getAllByName(hostname).toList()
+                if (addresses.isEmpty()) throw UnknownHostException(hostname)
+                return addresses
+            }
+        }
+
+        private val connectionPools = CopyOnWriteArraySet<ConnectionPool>()
+
+        fun trackNetworkClient(client: OkHttpClient) {
+            connectionPools += client.connectionPool
+        }
+
+        fun networkAware(client: OkHttpClient): OkHttpClient =
+            client.newBuilder().dns(ActiveNetworkDns).build().also(::trackNetworkClient)
+
+        fun onDefaultNetworkChanged(network: Network?) {
+            ActiveNetworkDns.network = network
+            connectionPools.forEach { it.evictAll() }
+        }
+
         /** 接口字段比 model 多且会随版本变化 —— 必须忽略未知 key */
         val JSON = Json {
             ignoreUnknownKeys = true
@@ -118,10 +155,12 @@ class WeKnoraApi(private val cfg: ConnectionConfig) {
          */
         private val sharedClient: OkHttpClient by lazy {
             OkHttpClient.Builder()
+                .dns(ActiveNetworkDns)
                 .connectTimeout(TIMEOUT_CONNECT, TimeUnit.SECONDS)
                 .readTimeout(TIMEOUT_NORMAL, TimeUnit.SECONDS)
                 .writeTimeout(TIMEOUT_NORMAL, TimeUnit.SECONDS)
                 .build()
+                .also(::trackNetworkClient)
         }
 
         /**

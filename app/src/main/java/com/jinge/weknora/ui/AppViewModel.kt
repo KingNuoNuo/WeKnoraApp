@@ -175,6 +175,56 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /* ---------------- 会话与对话 ---------------- */
     val sessions = mutableStateListOf<Session>()
     var currentSessionId by mutableStateOf<String?>(null)
+    var refreshingMessages by mutableStateOf(false)
+
+    fun onAppResumed() {
+        refreshCurrentSession()
+        viewModelScope.launch {
+            // 后台时服务端可能仍在生成，稍后再补拉一次，避免刚回前台时只拿到旧快照。
+            delay(2500)
+            if (streaming) refreshCurrentSession()
+        }
+    }
+
+    /** 恢复前台或用户手动刷新时，从服务端补齐当前会话已保存的回答。 */
+    fun refreshCurrentSession() {
+        val sid = currentSessionId ?: return
+        if (refreshingMessages) return
+        viewModelScope.launch {
+            refreshingMessages = true
+            try {
+                val restored = withContext(Dispatchers.IO) {
+                    apiNow().loadMessages(sid, 60).mapNotNull(ChatHistoryParser::parse)
+                }
+                if (sid != currentSessionId || restored.isEmpty()) return@launch
+
+                val latestRestoredAssistant = restored.lastOrNull { it.role == ChatMessage.Role.ASSISTANT }
+                val latestRestoredUser = restored.lastOrNull { it.role == ChatMessage.Role.USER }
+                val latestLocalUser = messages.lastOrNull { it.role == ChatMessage.Role.USER }
+                // 正在流式输出时，仅在服务端已保存了本轮完整答案后替换本地流；
+                // 如果服务端还没有本轮结果，就保留屏幕上正在增长的内容。
+                val completedCurrentTurn = streaming && latestLocalUser != null &&
+                    latestRestoredUser?.content == latestLocalUser.content &&
+                    !latestRestoredAssistant?.content.isNullOrBlank()
+                if (!streaming || completedCurrentTurn) {
+                    if (completedCurrentTurn) {
+                        streamJob?.cancel()
+                        streamJob = null
+                        streaming = false
+                    }
+                    messages.clear()
+                    messages.addAll(restored)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("WeKnora", "refreshCurrentSession failed", e)
+                snackText = "刷新对话失败：" + e.message
+            } finally {
+                refreshingMessages = false
+            }
+        }
+    }
 
     /* ---------------- 历史会话 ---------------- */
     /** 跨知识库的会话列表（历史面板用） */
@@ -1348,11 +1398,33 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         }
                     }.awaitAll().flatten()
                 }
-                // 两个来源按 (会话, 消息, 下标) 去重 —— 同一产物完全可能两边都有
-                // 新 → 旧。created_at 是 RFC3339，同格式下字典序即时间序，
-                // 直接用字符串比较，不必引日期库
-                val sorted = (fromLibrary + all)
-                    .distinctBy { it.key }
+                // 先按 (会话, 消息, 下标) 合并两个来源的重复项，再按同一会话内
+                // 的 source_path 合并覆盖写入形成的多个版本。created_at 是 RFC3339，
+                // 同格式下字典序即时间序。
+                val unique = (fromLibrary + all).distinctBy { it.key }
+                // A path is one logical file within a session. Each overwrite can
+                // appear as another message-level artifact, so show only its newest
+                // version while retaining the count needed by the delete dialog.
+                val sorted = unique
+                    .groupBy { artifact ->
+                        val path = artifact.sourcePath.trim()
+                        if (path.isEmpty()) artifact.key else "${artifact.sessionId}|$path"
+                    }
+                    .values
+                    .map { versions ->
+                        val newest = versions.maxWith(
+                            compareBy<Artifact> { it.createdAt }
+                                .thenBy { it.messageId }
+                                .thenBy { it.index }
+                        )
+                        newest.copy(
+                            versionCount = maxOf(
+                                versions.size,
+                                versions.maxOfOrNull { it.versionCount } ?: 0,
+                                1
+                            )
+                        )
+                    }
                     .sortedByDescending { it.createdAt }
                 artifacts.clear()
                 artifacts.addAll(sorted)
@@ -1398,6 +1470,31 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** 打开产物：PDF / Office / HTML 复用文档阅读器，常见文本格式走纯文本预览。 */
+    fun openArtifact(context: Context, a: Artifact) {
+        val format = a.ext.lowercase()
+        val readerFormat = when (format) {
+            "pdf", "docx", "pptx", "html", "htm" -> format
+            "png", "jpg", "jpeg", "webp", "gif", "bmp" -> "image"
+            "txt", "md", "markdown", "csv", "tsv", "json", "xml", "yaml", "yml",
+            "log", "ini", "properties", "sql", "kt", "java", "py", "js", "ts", "css",
+            "sh", "bash", "toml", "conf" -> "text"
+            else -> {
+                snackText = "暂不支持在 APP 内预览 .$format 文件，可点下载后用其他应用打开"
+                return
+            }
+        }
+        val api = api ?: return
+        val headers = android.os.Bundle().apply {
+            api.authHeaders().forEach { (key, value) -> putString(key, value) }
+        }
+        context.startActivity(android.content.Intent(context, com.jinge.weknora.DocumentReaderActivity::class.java)
+            .putExtra("url", api.artifactDownloadUrl(a))
+            .putExtra("title", a.displayName)
+            .putExtra("format", readerFormat)
+            .putExtra("headers", headers))
+    }
+
     /**
      * 删除产物。**服务端会回收对象存储里的字节，不可恢复** ——
      * 调用方（产物页）必须先弹确认框再来这里。
@@ -1410,9 +1507,22 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             busy = true
             busyLabel = "删除产物…"
             try {
-                withContext(Dispatchers.IO) { apiNow().deleteArtifact(a) }
+                withContext(Dispatchers.IO) {
+                    apiNow().deleteArtifact(a, allVersions = a.versionCount > 1)
+                }
                 artifacts.remove(a)
                 snackText = "已删除：${a.displayName}"
+            } catch (e: com.jinge.weknora.data.ApiException) {
+                if (e.code == 404) {
+                    // A stale artifact index can survive after a previous partial
+                    // delete/network timeout. Refresh immediately instead of asking
+                    // the user to delete the same row a second time.
+                    artifactsStale = true
+                    snackText = "文件已删除或版本已更新，正在刷新列表"
+                    loadArtifacts()
+                } else {
+                    snackText = "删除失败：${e.message}"
+                }
             } catch (e: Exception) {
                 snackText = "删除失败：" + e.message
             } finally {

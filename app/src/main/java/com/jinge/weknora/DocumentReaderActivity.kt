@@ -3,6 +3,7 @@ package com.jinge.weknora
 import android.os.Bundle
 import android.content.Intent
 import android.webkit.WebView
+import android.text.TextUtils
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
@@ -13,7 +14,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.FileProvider
+import coil.compose.AsyncImage
 import com.jinge.weknora.ui.theme.WeKnoraTheme
+import com.jinge.weknora.data.WeKnoraApi
 import kotlinx.coroutines.*
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -27,6 +30,7 @@ class DocumentReaderActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent { WeKnoraTheme {
             var html by remember { mutableStateOf<String?>(null) }
+            var imageFile by remember { mutableStateOf<File?>(null) }
             var error by remember { mutableStateOf<String?>(null) }
             LaunchedEffect(Unit) {
                 try {
@@ -50,7 +54,7 @@ class DocumentReaderActivity : ComponentActivity() {
                                     val safe = redirected.newBuilder()
                                     if (!sameOrigin) authKeys.forEach { safe.removeHeader(it) }
                                     chain.proceed(safe.build())
-                                }.build()
+                                }.build().let(WeKnoraApi::networkAware)
                             if (!file.exists() || file.length() == 0L) client.newCall(request.build()).execute().use { response ->
                                 check(response.isSuccessful) { "文档读取失败（HTTP ${response.code}）" }
                                 val body = response.body ?: error("文档为空")
@@ -77,9 +81,12 @@ class DocumentReaderActivity : ComponentActivity() {
                             .putExtra("cached_path", file.absolutePath)
                             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
                         finish()
+                    } else if (intent.getStringExtra("format") == "image") {
+                        imageFile = file
                     } else html = withContext(Dispatchers.IO) { when(intent.getStringExtra("format")) {
                         "docx" -> com.jinge.weknora.data.WordPreview.toHtml(file)
                         "pptx" -> com.jinge.weknora.data.PowerPointPreview.toHtml(file)
+                        "text" -> """<!doctype html><html lang="zh-CN"><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{font:16px/1.7 sans-serif;margin:18px;color:#202522}pre{white-space:pre-wrap;overflow-wrap:anywhere}</style><body><pre>${TextUtils.htmlEncode(file.readText())}</pre></body></html>"""
                         else -> file.readText()
                     } }
                 } catch (e: CancellationException) { throw e }
@@ -93,6 +100,11 @@ class DocumentReaderActivity : ComponentActivity() {
                     }
                     when {
                         error != null -> Text(error!!, Modifier.padding(16.dp))
+                        imageFile != null -> AsyncImage(
+                            model = imageFile,
+                            contentDescription = intent.getStringExtra("title"),
+                            modifier = Modifier.fillMaxSize()
+                        )
                         html == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                         else -> AndroidView(factory = { context -> WebView(context).apply {
                             settings.javaScriptEnabled = false

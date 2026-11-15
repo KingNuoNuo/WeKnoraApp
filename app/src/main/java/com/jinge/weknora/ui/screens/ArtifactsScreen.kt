@@ -109,6 +109,7 @@ fun ArtifactsScreen(vm: AppViewModel) {
                     items(list, key = { it.key }) { a ->
                         ArtifactCard(
                             a = a,
+                            onOpen = { vm.openArtifact(ctx, a) },
                             onDownload = { vm.downloadArtifact(ctx, a) },
                             onDelete = { pendingDelete = a }
                         )
@@ -384,6 +385,7 @@ private fun ArtifactEmpty(filtered: Boolean) {
 @Composable
 private fun ArtifactCard(
     a: Artifact,
+    onOpen: () -> Unit,
     onDownload: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -391,7 +393,9 @@ private fun ArtifactCard(
         shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(0.8.dp, MaterialTheme.colorScheme.outlineVariant),
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpen)
     ) {
         Row(
             Modifier.padding(start = 12.dp, end = 2.dp, top = 8.dp, bottom = 8.dp),
@@ -485,7 +489,7 @@ private fun ArtifactDeleteDialog(
                     append("\n\n")
                     append("文件会被彻底删除，不可恢复。")
                     if (a.versionCount > 1) {
-                        append("该文件还有 ${a.versionCount} 个历史版本，会一并删除。")
+                        append("共 ${a.versionCount} 个版本，会一并删除。")
                     }
                 },
                 style = MaterialTheme.typography.bodyMedium

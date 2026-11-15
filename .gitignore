@@ -17,3 +17,6 @@ local.properties
 *.iml
 .DS_Store
 Thumbs.db
+
+# 会话工具目录（临时脚本与凭据，勿入库）
+.workbuddy/

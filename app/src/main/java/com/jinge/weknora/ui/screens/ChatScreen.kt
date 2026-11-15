@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.ArrowOutward
 import androidx.compose.material.icons.outlined.AttachFile
@@ -883,6 +884,27 @@ private fun Composer(
                 }
 
                 Spacer(Modifier.size(6.dp))
+
+                if (vm.currentSessionId != null) {
+                    IconButton(
+                        onClick = { vm.refreshCurrentSession() },
+                        enabled = !vm.refreshingMessages,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        if (vm.refreshingMessages) {
+                            CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(
+                                Icons.Filled.Refresh,
+                                contentDescription = "刷新对话",
+                                modifier = Modifier.size(19.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.size(4.dp))
+                }
 
                 BasicTextField(
                     value = draft,

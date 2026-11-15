@@ -1,6 +1,8 @@
 package com.jinge.weknora
 
 import android.net.Uri
+import android.net.ConnectivityManager
+import android.net.Network
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -76,7 +78,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.jinge.weknora.data.Session
+import com.jinge.weknora.data.WeKnoraApi
 import com.jinge.weknora.ui.AppViewModel
 import com.jinge.weknora.ui.markdown.LocalApiBase
 import com.jinge.weknora.ui.markdown.LocalAppImageLoader
@@ -91,6 +97,17 @@ import com.jinge.weknora.ui.theme.brandMarkShape
 import com.jinge.weknora.ui.theme.brandTopBarColor
 
 class MainActivity : ComponentActivity() {
+    private val connectivityManager by lazy { getSystemService(ConnectivityManager::class.java) }
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            WeKnoraApi.onDefaultNetworkChanged(network)
+        }
+
+        override fun onLost(network: Network) {
+            WeKnoraApi.onDefaultNetworkChanged(connectivityManager.activeNetwork)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
@@ -98,6 +115,19 @@ class MainActivity : ComponentActivity() {
                 AppRoot()
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        runCatching {
+            WeKnoraApi.onDefaultNetworkChanged(connectivityManager.activeNetwork)
+            connectivityManager.registerDefaultNetworkCallback(networkCallback)
+        }
+    }
+
+    override fun onStop() {
+        runCatching { connectivityManager.unregisterNetworkCallback(networkCallback) }
+        super.onStop()
     }
 }
 
@@ -125,6 +155,7 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
                 }
             }
             .build()
+            .let(WeKnoraApi::networkAware)
         coil.ImageLoader.Builder(ctx)
             .okHttpClient(client)
             .crossfade(true)
@@ -183,6 +214,14 @@ private fun topBarSubtitle(vm: AppViewModel, tab: Tab): String {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MainScaffold(vm: AppViewModel) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, vm) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) vm.onAppResumed()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     var tab by remember { mutableStateOf(Tab.CHAT) }
     var kbMenu by remember { mutableStateOf(false) }
     var showHistory by remember { mutableStateOf(false) }
