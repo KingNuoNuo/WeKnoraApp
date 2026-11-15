@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -35,7 +36,8 @@ import androidx.compose.ui.unit.sp
  *
  * 与网页排版的三个不同（都是为窄屏做的）：
  *  1. **代码块不折行**，改为等宽 + 横向滚动 —— 折行会把缩进结构毁掉；
- *  2. **表格横向滚动**，列宽按内容估算、同列等宽，滚动时列仍然对齐；
+ *  2. **表格优先铺满气泡宽度**：2~3 列按内容比例分配，右侧不再被屏幕裁掉；
+ *     只有列多到连最小列宽都塞不下时，才退回横向滚动；
  *  3. **标题按级别降到正文附近的字号**，手机上 24sp 的 h1 一屏放不下两行。
  *
  * 渲染出来的每个 [MdBlock] 都是独立 composable，[SelectionContainer] 套在外层即可整体选中。
@@ -161,12 +163,6 @@ private fun QuoteBlock(block: MdBlock.Quote, color: Color, onImageClick: (String
 }
 
 /**
- * 表格：整体可横向滚动，列宽按「该列最长内容」估算后固定下来。
- *
- * 为什么不用 IntrinsicSize 自动对齐：它和 horizontalScroll 叠加时会拿到无限宽度约束，
- * 直接崩。固定列宽既避开了这个坑，也保证滚动时列始终对齐。
- */
-/**
  * 粗估一段文本的显示宽度（dp）：全角字符 ≈15、半角 ≈8。
  *
  * 特意写成命令式的独立函数，而不是内联 `sumOf { }` —— 嵌套 lambda 里的 `sumOf`
@@ -179,19 +175,32 @@ private fun estimateWidth(text: String): Int {
     return w
 }
 
+/**
+ * 表格：默认铺满气泡宽度，2~3 列的右端不会再被屏幕裁掉。
+ *
+ * 不用 IntrinsicSize 自动对齐：它和 horizontalScroll 叠加时会拿到无限宽度约束，
+ * 直接崩。改成先量可用宽度、再按比例把宽度算死，滚动时列仍然对齐。
+ * 只有列多到连每列 56dp 都放不下时才保留横滑。
+ */
 @Composable
 private fun TableBlock(block: MdBlock.Table, color: Color, onImageClick: (String) -> Unit) {
     val cols = block.header.size
     if (cols == 0) return
 
-    val widths = remember(block) {
+    // 每列最长单元格的「内容量」。只用来算比例，不再直接当绝对宽度 ——
+    // 原来按内容长度夹到 64..240dp，两列合起来常常超过气泡可用宽度，
+    // 右列被屏幕裁掉，看着像表格没写完。
+    val lengths = remember(block) {
         (0 until cols).map { c ->
             val texts = listOfNotNull(block.header.getOrNull(c)) +
                 block.rows.mapNotNull { it.getOrNull(c) }
-            // 再加 18dp 内边距，夹在 64..240dp
-            val w: Int = texts.maxOfOrNull { estimateWidth(it) } ?: 8
-            (w + 18).coerceIn(64, 240).dp
+            (texts.maxOfOrNull { estimateWidth(it) } ?: 8).toFloat().coerceAtLeast(8f)
         }
+    }
+    // 开方压一下差距：「内容要点」一列动辄几百字，直接按长度分比例会把
+    // 「章节」压成一根竖条。sqrt 后 10:1 变成 3:1，短列还站得住。
+    val weights = remember(lengths) {
+        lengths.map { kotlin.math.sqrt(it.toDouble()).toFloat().coerceAtLeast(6f) }
     }
 
     Surface(
@@ -199,24 +208,42 @@ private fun TableBlock(block: MdBlock.Table, color: Color, onImageClick: (String
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(Modifier.horizontalScroll(rememberScrollState())) {
-            Row(Modifier.background(MaterialTheme.colorScheme.surfaceContainerHighest)) {
-                block.header.forEachIndexed { c, cell ->
-                    TableCell(cell, widths[c], block.aligns.getOrElse(c) { MdAlign.START }, color, true, onImageClick)
-                }
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val minCol = 56f
+            // 列太多（比如 6 列）铺满只会挤成一排竖条，那种才允许横滑。
+            val scroll = maxWidth.value < minCol * cols
+            val widths: List<Dp> = if (scroll) {
+                lengths.map { (it + 12f).coerceIn(64f, 200f).dp }
+            } else {
+                // 先给每列保底，剩下的按内容比例分，总和恰好等于可用宽度。
+                // 全部用 .value 算再转 dp，免得依赖 Dp 的运算符重载。
+                val reserved = minCol * cols
+                val extra = maxWidth.value - reserved
+                val sum = weights.sum()
+                weights.map { (minCol + extra * (it / sum)).dp }
             }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            block.rows.forEach { row ->
-                Row {
-                    repeat(cols) { c ->
-                        TableCell(
-                            row.getOrNull(c) ?: "",
-                            widths[c],
-                            block.aligns.getOrElse(c) { MdAlign.START },
-                            color,
-                            false,
-                            onImageClick
-                        )
+            Column(
+                if (scroll) Modifier.horizontalScroll(rememberScrollState())
+                else Modifier.fillMaxWidth()
+            ) {
+                Row(Modifier.background(MaterialTheme.colorScheme.surfaceContainerHighest)) {
+                    block.header.forEachIndexed { c, cell ->
+                        TableCell(cell, widths[c], block.aligns.getOrElse(c) { MdAlign.START }, color, true, onImageClick)
+                    }
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                block.rows.forEach { row ->
+                    Row {
+                        repeat(cols) { c ->
+                            TableCell(
+                                row.getOrNull(c) ?: "",
+                                widths[c],
+                                block.aligns.getOrElse(c) { MdAlign.START },
+                                color,
+                                false,
+                                onImageClick
+                            )
+                        }
                     }
                 }
             }
@@ -237,7 +264,9 @@ private fun TableCell(
         color,
         Modifier
             .width(width)
-            .padding(horizontal = 10.dp, vertical = 7.dp),
+            // 原来左右各 10dp：两列之间白白吃掉 20dp，窄屏上正好把右列顶出去。
+            // 收到 6dp，列间距 12dp，整表就能落在气泡里。
+            .padding(horizontal = 6.dp, vertical = 7.dp),
         textAlign = when (align) {
             MdAlign.START -> TextAlign.Start
             MdAlign.CENTER -> TextAlign.Center

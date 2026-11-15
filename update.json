@@ -1,6 +1,6 @@
 {
-  "version": "1.1.36",
-  "version_code": 38,
-  "notes": "PDF 附件改为文档卡片，点开用内置阅读器查看；去掉回答末尾自动追加的插图区，只保留正文插图",
-  "url": "https://github.com/KingNuoNuo/WeKnoraApp/releases/download/v1.1.36/app-release.apk"
+  "version": "1.1.37",
+  "version_code": 39,
+  "notes": "运行参数移到输入框上方，改配置更顺手；修复窄屏上表格右侧被裁掉的问题",
+  "url": "https://github.com/KingNuoNuo/WeKnoraApp/releases/download/v1.1.37/app-release.apk"
 }

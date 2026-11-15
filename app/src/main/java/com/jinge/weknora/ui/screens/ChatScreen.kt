@@ -97,10 +97,14 @@ import com.jinge.weknora.ui.markdown.prepareAssistantContent
 /**
  * 对话页。
  *
- * 布局自上而下：运行参数条（智能体 / 模型 / 思考强度 / 联网搜索）→ 消息列表 → 输入区。
- * 参数条做成常驻的一行图标：改选只影响「下一条」提问，不会打断正在流式输出的回答。
+ * 布局自上而下：消息列表 → 运行参数条（智能体 / 模型 / 思考强度 / 联网搜索）→ 输入区。
  *
- * 附件入口只保留输入区下方那一个 —— 之前参数条上也有一个，两个入口做同一件事，
+ * 参数条**贴在输入区上方**（排版方案 B）：改模型、切联网和「敲下一条问题」本来就是
+ * 一套连续动作，原来一个在屏幕顶端、一个在底端，每次都要抬手跑一趟。挪下来之后
+ * 顶部少一行 chrome，回答区多出约 13% 的高度，而且滚到很长的回答时参数仍常驻可见。
+ * 改选只影响「下一条」提问，不会打断正在流式输出的回答。
+ *
+ * 附件入口只保留输入区那一个 —— 之前参数条上也有一个，两个入口做同一件事，
  * 位置还隔着半屏，属于纯冗余。参数条那个位置腾给「联网搜索」开关。
  */
 @Composable
@@ -142,9 +146,8 @@ fun ChatScreen(
             // 不显式刷底色：Scaffold 的 containerColor 本来就是 background，
             // 其他三个页面都没重刷，这里再涂一层只是多一道绘制指令
     ) {
-        OptionBar(vm)
-
-        // 顶部分隔：流式输出时变成一条细进度线，不打断阅读
+        // 流式时贴着消息区顶部画一条细进度线，不打断阅读。
+        // 参数条已挪到输入区上方，顶部不再有常驻的一行 chrome。
         Box(Modifier.fillMaxWidth()) {
             if (vm.streaming) {
                 LinearProgressIndicator(
@@ -185,6 +188,15 @@ fun ChatScreen(
             }
         }
 
+        // 消息区与参数区之间用一条细线断开：两块都是 surface 白底，
+        // 没有这条线会连成一片，看不出「回答到哪儿结束」。
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(MaterialTheme.colorScheme.outlineVariant)
+        )
+        OptionBar(vm)
         Composer(
             vm = vm,
             draft = draft,
@@ -219,6 +231,10 @@ fun ChatScreen(
  *
  * 参数条可横向滚动：知识库直答、模型名前缀、思考强度三件事加一起，
  * 窄屏一行放不下，宁可让它滑，也不要截断成「知识库直…」。
+ *
+ * 位置在**输入区上方**（排版方案 B）。因此下拉菜单不能假设下面有空间：
+ * [ParamChip] 里给菜单限了最大高度，让 Material3 的位置计算把它翻到 chip 上方展开，
+ * 否则一串模型名会被屏幕底边裁掉。
  */
 @Composable
 private fun OptionBar(vm: AppViewModel) {
@@ -235,10 +251,19 @@ private fun OptionBar(vm: AppViewModel) {
             Modifier
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 10.dp, vertical = 8.dp),
+                // 贴着输入区，比放顶端时压薄一点：两行连起来别吃掉太多回答区
+                .padding(horizontal = 10.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(5.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // 换到输入区上方之后，给这排 chip 一个身份标签：
+            // 不然它紧贴输入框，容易被当成输入区的一部分。
+            Text(
+                "配置",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
             ParamChip(
                 icon = Icons.Outlined.SmartToy,
                 label = agentName,
@@ -384,7 +409,14 @@ private fun ParamChip(
                 tint = content.copy(alpha = 0.7f)
             )
         }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+        // 参数条现在贴着屏幕底部，下方只剩输入框。限高后 Material3 的
+        // DropdownMenuPositionProvider 会判定「下方放不下、上方放得下」，
+        // 自动把菜单翻到 chip 上方展开；不限制的话长模型列表会被底边裁掉。
+        DropdownMenu(
+            expanded = open,
+            onDismissRequest = { open = false },
+            modifier = Modifier.heightIn(max = 300.dp)
+        ) {
             menu { open = false }
         }
     }
