@@ -14,15 +14,30 @@ plugins {
 // 取值优先级：Gradle -P 属性 > 环境变量（CI 用）> signing/keystore.properties（本地用）。
 // 三者都没有时退回 debug 签名，保证刚 clone 下来的仓库仍能 assembleRelease；
 // 但 CI 在出包后会校验证书指纹，debug 签名的包会被拦下，不会发出去。
+//
+// 坑：这里不能写 java.util.Properties —— Gradle Kotlin DSL 脚本作用域里的 `java`
+// 会被插件生成的类型安全访问器遮蔽，脚本直接编译不过。properties 格式很简单，
+// 按行拆 key=value 就够，顺带避开所有 java.* 依赖。
 val signingPropsFile = rootProject.file("signing/keystore.properties")
-val signingProps = java.util.Properties().apply {
-    if (signingPropsFile.isFile) signingPropsFile.inputStream().use { load(it) }
+val signingProps: Map<String, String> = if (signingPropsFile.isFile) {
+    signingPropsFile.readLines()
+        .map { it.trim() }
+        .filter { it != "" && !it.startsWith("#") && it.contains("=") }
+        .associate { line ->
+            val sep = line.indexOf('=')
+            line.substring(0, sep).trim() to line.substring(sep + 1).trim()
+        }
+} else {
+    emptyMap()
 }
 
+fun nonBlank(value: String?): String? =
+    if (value == null || value.trim() == "") null else value.trim()
+
 fun signingValue(prop: String, env: String, key: String): String? =
-    (findProperty(prop) as String?)?.takeIf { it.isNotBlank() }
-        ?: System.getenv(env)?.takeIf { it.isNotBlank() }
-        ?: signingProps.getProperty(key)?.takeIf { it.isNotBlank() }
+    nonBlank(findProperty(prop) as String?)
+        ?: nonBlank(System.getenv(env))
+        ?: nonBlank(signingProps[key])
 
 val releaseKeystoreFile = signingValue("WKN_KEYSTORE_FILE", "WKN_KEYSTORE_FILE", "storeFile")
 val releaseStorePassword = signingValue("WKN_KEYSTORE_PASSWORD", "WKN_KEYSTORE_PASSWORD", "storePassword")
@@ -31,7 +46,7 @@ val releaseKeyPassword = signingValue("WKN_KEY_PASSWORD", "WKN_KEY_PASSWORD", "k
     ?: releaseStorePassword
 val hasReleaseSigning = listOf(
     releaseKeystoreFile, releaseStorePassword, releaseKeyAlias, releaseKeyPassword
-).all { !it.isNullOrBlank() } && rootProject.file(releaseKeystoreFile!!).isFile
+).all { nonBlank(it) != null } && rootProject.file(releaseKeystoreFile!!).isFile
 
 android {
     namespace = "com.jinge.weknora"
