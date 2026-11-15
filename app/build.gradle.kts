@@ -5,6 +5,34 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
+// ---- 固定 release 签名 ----
+//
+// 以前 release 直接套 debug signing config，而 CI 每次都是全新 runner，
+// ~/.android/debug.keystore 由 AGP 现场生成 —— 于是每个版本的证书都不同，
+// 覆盖安装被系统拒绝（必须先卸载）。现在统一读一份固定的 keystore。
+//
+// 取值优先级：Gradle -P 属性 > 环境变量（CI 用）> signing/keystore.properties（本地用）。
+// 三者都没有时退回 debug 签名，保证刚 clone 下来的仓库仍能 assembleRelease；
+// 但 CI 在出包后会校验证书指纹，debug 签名的包会被拦下，不会发出去。
+val signingPropsFile = rootProject.file("signing/keystore.properties")
+val signingProps = java.util.Properties().apply {
+    if (signingPropsFile.isFile) signingPropsFile.inputStream().use { load(it) }
+}
+
+fun signingValue(prop: String, env: String, key: String): String? =
+    (findProperty(prop) as String?)?.takeIf { it.isNotBlank() }
+        ?: System.getenv(env)?.takeIf { it.isNotBlank() }
+        ?: signingProps.getProperty(key)?.takeIf { it.isNotBlank() }
+
+val releaseKeystoreFile = signingValue("WKN_KEYSTORE_FILE", "WKN_KEYSTORE_FILE", "storeFile")
+val releaseStorePassword = signingValue("WKN_KEYSTORE_PASSWORD", "WKN_KEYSTORE_PASSWORD", "storePassword")
+val releaseKeyAlias = signingValue("WKN_KEY_ALIAS", "WKN_KEY_ALIAS", "keyAlias")
+val releaseKeyPassword = signingValue("WKN_KEY_PASSWORD", "WKN_KEY_PASSWORD", "keyPassword")
+    ?: releaseStorePassword
+val hasReleaseSigning = listOf(
+    releaseKeystoreFile, releaseStorePassword, releaseKeyAlias, releaseKeyPassword
+).all { !it.isNullOrBlank() } && rootProject.file(releaseKeystoreFile!!).isFile
+
 android {
     namespace = "com.jinge.weknora"
     compileSdk = 36
@@ -25,14 +53,21 @@ android {
         // 递增规则：versionCode 每次编译 +1；versionName **只动末位**
         // （1.1.1 → 1.1.2 → …），前两位只在正式发版时手动动。
         // 每次编译完要同步在对话里给一份 release note，并追加到 CHANGELOG.md。
-        versionCode = 39
-        versionName = "1.1.37"
+        versionCode = 40
+        versionName = "1.1.38"
     }
 
-    // release 也用 debug 签名：装到手机上即可用，省去配置 keystore 的麻烦。
-    // （真要上架再换正式签名，签名配置在 signingConfigs 里改。）
+    // 有固定证书就签正式包；没配 keystore 时退回 debug（CI 的指纹校验会拦住后者）
     signingConfigs {
         getByName("debug")
+        if (hasReleaseSigning) {
+            create("releaseCert") {
+                storeFile = rootProject.file(releaseKeystoreFile!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
     }
 
     buildTypes {
@@ -41,7 +76,8 @@ android {
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"),
                           "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (hasReleaseSigning) signingConfigs.getByName("releaseCert")
+                            else signingConfigs.getByName("debug")
         }
     }
 

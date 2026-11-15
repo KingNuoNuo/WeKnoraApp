@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  D · 白牌：一整块圆角白牌，WK 用底色反挖出来（像贴在知识库上的索引标签）。
+
+  字母不是字体，是几何笔画：W = 5 点折线，K = 1 竖 + 2 斜。
+
+  白牌定在 56x56 / r=18（而非设计稿初版的 66x66 / r=16）：
+  自适应图标的圆形遮罩是居中 72/108（半径 36），66 方牌的四角距中心 46.7 会被裁掉，
+  上下会露出两条底色弧边。56/r18 的牌在 45° 方向最远只有 32.1，完整落在遮罩内，
+  四种遮罩下都保得住圆角方牌的形状。字母随之等比缩到 0.88，笔画宽度仍保持 5.5。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 圆角白牌 56x56 / r=18，四角用三次贝塞尔近似（VectorDrawable 没有 <rect>） -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M44,26 L64,26 C73.94,26 82,35.94 82,44 L82,64 C82,73.94 73.94,82 64,82 L44,82 C34.06,82 26,73.94 26,64 L26,44 C26,34.06 34.06,26 44,26 Z" />
+
+    <!-- W -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M32,41.7 L35.3,66.3 L40.8,52.5 L46.3,66.3 L49.6,41.7"
+        android:strokeColor="@color/ic_launcher_background"
+        android:strokeWidth="5.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- K -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M56.6,41.7 L56.6,66.3 M59.1,54 L74.2,41.7 M59.1,54 L74.2,66.3"
+        android:strokeColor="@color/ic_launcher_background"
+        android:strokeWidth="5.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

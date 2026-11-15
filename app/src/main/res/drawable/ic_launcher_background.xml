@@ -1,10 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 启动器图标底：墨绿 → 信号青，与 App 内品牌标（Brand.Accent #2FA99B）同源 -->
+<!-- 启动器图标底：信号青纯色，与 App 内品牌标（Brand.Accent #2FA99B）同源。
+     白牌上反挖的 WK 笔画引用同一个 color 资源，改底色只需改 values/colors.xml 一处。 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <gradient
-        android:type="linear"
-        android:angle="315"
-        android:startColor="#0E3B36"
-        android:endColor="#2FA99B" />
+    <solid android:color="@color/ic_launcher_background" />
 </shape>

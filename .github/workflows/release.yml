@@ -10,7 +10,7 @@ on:
       release_tag:
         description: 要发布的 tag（必须与 build.gradle.kts 的 versionName 一致）
         required: true
-        default: v1.1.35
+        default: v1.1.38
 
 permissions:
   contents: write
@@ -83,13 +83,61 @@ jobs:
             exit 1
           fi
 
+      # 固定签名：私钥不入库，CI 从 Secrets 还原出同一份 keystore。
+      # 缺 Secret 时直接失败，不能让 Gradle 静默退回「每次都变」的 debug 签名。
+      - name: Restore release keystore
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          for name in RELEASE_KEYSTORE_BASE64 RELEASE_KEYSTORE_PASSWORD RELEASE_KEY_ALIAS; do
+            if [ -z "${!name}" ]; then
+              echo "::error::缺少仓库 Secret: ${name}（配置方式见 README「签名」一节）"
+              exit 1
+            fi
+          done
+          mkdir -p signing
+          printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 -d > signing/release.jks
+          chmod 600 signing/release.jks
+          # 先验证 Secret 内容自洽：密码或别名不对就立刻失败，别等 R8 跑完才报错
+          if ! keytool -list -keystore signing/release.jks \
+              -storepass "$RELEASE_KEYSTORE_PASSWORD" -alias "$RELEASE_KEY_ALIAS" > /dev/null 2>&1; then
+            echo "::error::还原的 keystore 与 RELEASE_KEYSTORE_PASSWORD / RELEASE_KEY_ALIAS 不匹配"
+            exit 1
+          fi
+          echo "keystore restored: $(wc -c < signing/release.jks) bytes"
+
       - name: Run unit tests
         run: |
           chmod +x ./gradlew
           ./gradlew --no-daemon --stacktrace testDebugUnitTest
 
       - name: Build release APK
+        env:
+          WKN_KEYSTORE_FILE: signing/release.jks
+          WKN_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          WKN_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
         run: ./gradlew --no-daemon --stacktrace assembleRelease
+
+      # 只靠「构建没报错」不够：Secret 配错时 Gradle 会退回 debug 签名照样出包。
+      # 直接比证书指纹，确保发出去的每个版本都是同一把钥匙。
+      - name: Verify release certificate
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/release/app-release.apk
+          APKSIGNER=$(find "${ANDROID_HOME}/build-tools" -name apksigner -type f | sort -V | tail -1)
+          INFO=$("$APKSIGNER" verify --print-certs "$APK")
+          echo "$INFO" | grep -E 'Signer #1 certificate (DN|SHA-256 digest)'
+          ACTUAL=$(echo "$INFO" | sed -n 's/.*Signer #1 certificate SHA-256 digest: \([0-9a-fA-F]*\).*/\1/p' | head -1 | tr 'A-F' 'a-f')
+          # signing/release.jks 的证书指纹（2026-11-15 生成）。换 keystore 时必须同步改这里。
+          EXPECTED=462c41a36e26bdcbfc0531451539d42d4c966cced10290687f47ebe8ef9dace5
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::APK 证书指纹不匹配（实际 ${ACTUAL:-空}），可能 Secret 缺失导致退回了 debug 签名"
+            exit 1
+          fi
+          echo "签名证书固定：${ACTUAL}"
 
       - name: Show APK
         run: ls -l app/build/outputs/apk/release/

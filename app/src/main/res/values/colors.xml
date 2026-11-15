@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#0D1117</color>
+    <!-- 启动器图标底色：drawable/ic_launcher_background.xml 与前景里反挖的 WK 笔画共用 -->
+    <color name="ic_launcher_background">#FF2FA99B</color>
 
     <!-- 系统栏颜色：必须与 Compose 里 Theme.kt 的取值保持一致，
          否则墨色顶栏上面会压着一条白状态栏，一眼露馅。
