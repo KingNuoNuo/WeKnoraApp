@@ -1,0 +1,102 @@
+name: Build and publish Android release
+
+# 打 v* tag 自动发布；也可以在 Actions 页面手动填 tag 触发。
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 要发布的 tag（必须与 build.gradle.kts 的 versionName 一致）
+        required: true
+        default: v1.1.35
+
+permissions:
+  contents: write
+
+# 同一个 tag 重复触发时排队，不并发跑两份
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # 缓存 Gradle 发行包与依赖。首跑要下 gradle-8.11.1-bin.zip（约 130MB）
+      # 加全部依赖，之后命中缓存能省掉大半时间
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties', 'gradle/libs.versions.toml') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      # 不用 android-actions/setup-android：它在 runner 上被强制跑在 Node 24，
+      # 7 秒内直接失败、且不给任何错误注解。GitHub 的 ubuntu 镜像本来就带 SDK，
+      # 这里只用命令行工具补齐本工程需要的包：compileSdk 36 + SDK 扩展 19。
+      - name: Install Android SDK packages
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          SDKMANAGER="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          ls "$SDK/platforms" || true
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" --install \
+            "platform-tools" \
+            "platforms;android-36" \
+            "platforms;android-36-ext19" \
+            "build-tools;36.0.0"
+
+      # 防呆：tag 与 versionName 必须对得上。
+      # v1.1.34 那次就是 tag 叫 1.1.34、代码里写着别的版本，发出去的包和号对不上。
+      - name: Verify tag matches versionName
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          NAME=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -1)
+          CODE=$(sed -n 's/^[[:space:]]*versionCode = \([0-9][0-9]*\).*/\1/p' app/build.gradle.kts | head -1)
+          echo "tag=${TAG} versionName=${NAME} versionCode=${CODE}"
+          if [ -z "${NAME}" ] || [ -z "${CODE}" ]; then
+            echo "::error::没能从 app/build.gradle.kts 里读出 versionName / versionCode"
+            exit 1
+          fi
+          if [ "v${NAME}" != "${TAG}" ]; then
+            echo "::error::tag ${TAG} 与 build.gradle.kts 的 versionName ${NAME} 不一致，请先统一版本号"
+            exit 1
+          fi
+
+      - name: Run unit tests
+        run: |
+          chmod +x ./gradlew
+          ./gradlew --no-daemon --stacktrace testDebugUnitTest
+
+      - name: Build release APK
+        run: ./gradlew --no-daemon --stacktrace assembleRelease
+
+      - name: Show APK
+        run: ls -l app/build/outputs/apk/release/
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
+          generate_release_notes: true
+          files: app/build/outputs/apk/release/app-release.apk

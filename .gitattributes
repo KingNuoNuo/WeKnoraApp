@@ -6,3 +6,8 @@ gradlew     text eol=lf
 # Windows 批处理必须是 CRLF
 gradlew.bat text eol=crlf
 *.bat       text eol=crlf
+
+# CI 配置锁 LF：workflow 里的 `run: |` 块会被原样喂给 bash，
+# CRLF 会在行尾留下 \r。YAML 一般能吞掉，但不必赌
+*.yml       text eol=lf
+*.yaml      text eol=lf
