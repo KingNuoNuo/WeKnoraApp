@@ -80,31 +80,43 @@ fun resolveImageUrl(raw: String, base: String): String {
     // 被截断的句柄（`resource://x4Pk...` / `…`）发出去也只会拿到 400，
     // 这里直接判空，由渲染层跳过，不再产生无效请求
     if (url.endsWith("...") || url.endsWith("…")) return ""
+    // 用 java.net.URI 解析，不用 android.net.Uri：后者在 JVM 单元测试里是
+    // 未实现的 stub，一调用就抛 "Method parse ... not mocked"，外面套着
+    // runCatching 会把它静默吞成 false，于是测试全绿、逻辑却没生效。
+    // URI 在 JVM 和 Android 上都可用，这里也没有用到 Uri 的任何特有行为。
+    val publicResource = if (url.startsWith("http://") || url.startsWith("https://")) {
+        runCatching { java.net.URI(url) }
+            .getOrNull()
+            ?.takeIf { it.path.orEmpty().matches(Regex("""/r/[0-9A-Za-z_-]{8,}""")) }
+    } else null
     return when {
         // 服务端公开地址 APP_EXTERNAL_URL/r/<token> 在手机网络下常不可达，
         // 但 token 对应的路径可由当前已配置的 WeKnora 服务直接提供。
         // 改用配置的 origin，可避免走公网域名/错误端口，同时由同源加载器带鉴权。
-        (url.startsWith("http://") || url.startsWith("https://")) &&
-            origin.isNotBlank() && runCatching {
-                val parsed = android.net.Uri.parse(url)
-                parsed.path.orEmpty().matches(Regex("""/r/[0-9A-Za-z_-]{8,}"""))
-            }.getOrDefault(false) -> {
-                val parsed = android.net.Uri.parse(url)
-                origin + parsed.encodedPath.orEmpty() +
-                    (parsed.encodedQuery?.let { "?$it" } ?: "") +
-                    (parsed.encodedFragment?.let { "#$it" } ?: "")
-            }
+        publicResource != null && origin.isNotBlank() -> {
+            origin + publicResource.rawPath.orEmpty() +
+                (publicResource.rawQuery?.let { "?$it" } ?: "") +
+                (publicResource.rawFragment?.let { "#$it" } ?: "")
+        }
         url.startsWith("http://") || url.startsWith("https://") -> url
         // 知识库正文里的图：`resource://<handle>`。
         // 服务端有一个 /files 代理专门把这句柄换成字节，且认 X-API-Key
         // （实测 200 image/png），所以拼成 `{base}/files?file_path=<encoded>`。
         // 鉴权头由 MainActivity 里的 Coil ImageLoader 统一加，只加给同源请求。
         url.startsWith("resource://") && origin.isNotBlank() ->
-            origin + "/files?file_path=" + android.net.Uri.encode(url)
+            origin + "/files?file_path=" + encodeQueryValue(url)
         url.startsWith("/") && origin.isNotBlank() -> origin + url
         else -> url
     }
 }
+
+/**
+ * 按 query 参数规则编码，替代 `android.net.Uri.encode`（同样在 JVM 测试里不可用）。
+ *
+ * URLEncoder 把空格编成 `+`，但这里拼的是 path 查询串，需要 `%20`，补一次替换。
+ */
+private fun encodeQueryValue(value: String): String =
+    java.net.URLEncoder.encode(value, "UTF-8").replace("+", "%20")
 
 /**
  * 回答正文里的一张图。
