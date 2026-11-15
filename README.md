@@ -21,7 +21,7 @@ Android client for a self-hosted WeKnora knowledge base — chat with RAG agents
 
 ---
 
-当前版本 **v1.1.38**（versionCode 40）· [下载 APK](https://github.com/KingNuoNuo/WeKnoraApp/releases/latest) · [更新日志](CHANGELOG.md)
+当前版本 **v1.1.39**（versionCode 41）· [下载 APK](https://github.com/KingNuoNuo/WeKnoraApp/releases/latest) · [更新日志](CHANGELOG.md)
 
 > 本仓库只包含**安卓客户端**。服务端部署、知识图谱 / Neo4j 开关、模型配置都在 [Tencent/WeKnora](https://github.com/Tencent/WeKnora) 一侧。
 
@@ -156,10 +156,10 @@ update.json                      # App 内检查更新读的版本文件
 
 ```json
 {
-  "version": "1.1.38",
-  "version_code": 40,
+  "version": "1.1.39",
+  "version_code": 41,
   "notes": "本次更新说明",
-  "url": "https://github.com/KingNuoNuo/WeKnoraApp/releases/download/v1.1.38/app-release.apk"
+  "url": "https://github.com/KingNuoNuo/WeKnoraApp/releases/download/v1.1.39/app-release.apk"
 }
 ```
 

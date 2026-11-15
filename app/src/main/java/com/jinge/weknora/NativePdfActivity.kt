@@ -62,7 +62,11 @@ class NativePdfActivity : FragmentActivity() {
             val bars = insets.getInsets(android.view.WindowInsets.Type.systemBars())
             v.setPadding(bars.left, bars.top, bars.right, bars.bottom); insets
         }
-        val title = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setBackgroundColor(0xff12201e.toInt()) }
+        // 与系统状态栏同一色值（@color/sys_bar_top），夜间自动切深墨，顶栏和状态栏连成一片
+        val title = LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            setBackgroundColor(androidx.core.content.ContextCompat.getColor(this@NativePdfActivity, R.color.sys_bar_top))
+        }
         title.addView(button("‹ 返回", true) { leave() }, LinearLayout.LayoutParams(-2,-1))
         title.addView(TextView(this).apply {
             text = intent.getStringExtra("title"); setTextColor(Color.WHITE); textSize = 14f; maxLines = 1

@@ -1,6 +1,6 @@
 {
-  "version": "1.1.38",
-  "version_code": 40,
-  "notes": "全新 WK 白牌图标，改用固定证书签名（以后可直接覆盖安装）；从 1.1.37 及更早版本升级需先卸载重装一次",
-  "url": "https://github.com/KingNuoNuo/WeKnoraApp/releases/download/v1.1.38/app-release.apk"
+  "version": "1.1.39",
+  "version_code": 41,
+  "notes": "撤销预览页全屏，状态栏改为深墨底白色图标，顶栏配色与主页面统一",
+  "url": "https://github.com/KingNuoNuo/WeKnoraApp/releases/download/v1.1.39/app-release.apk"
 }

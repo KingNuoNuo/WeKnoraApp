@@ -10,7 +10,7 @@ on:
       release_tag:
         description: 要发布的 tag（必须与 build.gradle.kts 的 versionName 一致）
         required: true
-        default: v1.1.38
+        default: v1.1.39
 
 permissions:
   contents: write

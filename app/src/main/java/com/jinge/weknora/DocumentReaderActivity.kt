@@ -6,11 +6,14 @@ import android.webkit.WebView
 import android.text.TextUtils
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.FileProvider
@@ -94,9 +97,24 @@ class DocumentReaderActivity : ComponentActivity() {
             }
             Surface(Modifier.fillMaxSize()) {
                 Column(Modifier.fillMaxSize().systemBarsPadding()) {
-                    Row(Modifier.fillMaxWidth().height(44.dp), verticalAlignment = Alignment.CenterVertically) {
-                        TextButton(onClick = { finish() }) { Text("返回") }
-                        Text(intent.getStringExtra("title").orEmpty(), Modifier.weight(1f), maxLines = 1)
+                    // 顶栏与系统状态栏同色，白字；不再出现「深墨状态栏 + 浅色顶栏」的断层
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                            .background(colorResource(R.color.sys_bar_top)),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(
+                            onClick = { finish() },
+                            colors = ButtonDefaults.textButtonColors(contentColor = Color.White)
+                        ) { Text("返回") }
+                        Text(
+                            intent.getStringExtra("title").orEmpty(),
+                            Modifier.weight(1f),
+                            maxLines = 1,
+                            color = Color.White
+                        )
                     }
                     when {
                         error != null -> Text(error!!, Modifier.padding(16.dp))

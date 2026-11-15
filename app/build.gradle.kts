@@ -68,8 +68,8 @@ android {
         // 递增规则：versionCode 每次编译 +1；versionName **只动末位**
         // （1.1.1 → 1.1.2 → …），前两位只在正式发版时手动动。
         // 每次编译完要同步在对话里给一份 release note，并追加到 CHANGELOG.md。
-        versionCode = 40
-        versionName = "1.1.38"
+        versionCode = 41
+        versionName = "1.1.39"
     }
 
     // 有固定证书就签正式包；没配 keystore 时退回 debug（CI 的指纹校验会拦住后者）

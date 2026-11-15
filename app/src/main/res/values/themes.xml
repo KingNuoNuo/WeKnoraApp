@@ -1,6 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.WeKnora.Reader" parent="Theme.Material3.DayNight.NoActionBar" />
+    <!-- PDF 预览页的系统壳：系统栏配色与主页面 Theme.WeKnora 完全一致，
+         深墨状态栏 + 白色图标，状态栏正常显示（不做全屏隐藏）。
+         顶栏本身也是深墨，两条连成一片，时间/电量清晰可读。
+
+         parent 必须留 Material3 —— NativePdfActivity 用了 MaterialButton /
+         MaterialAlertDialogBuilder，换成主页面那个 android:Theme.Material.Light 会崩。
+         夜间对应的同名 style 在 values-night/themes.xml。 -->
+    <style name="Theme.WeKnora.Reader" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:windowDisablePreview">true</item>
+        <item name="android:windowBackground">@color/window_bg</item>
+        <item name="android:statusBarColor">@color/sys_bar_top</item>
+        <!-- 深底必须配白色图标 -->
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@color/sys_bar_bottom</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
     <!-- 纯 Compose 项目：主题由 Compose 侧 Theme.kt 控制，
          这里只提供一个无 ActionBar 的系统壳主题。
 
