@@ -1,6 +1,6 @@
 {
-  "version": "1.1.33",
-  "version_code": 35,
-  "notes": "恢复所有页面的知识库切换按钮；新会话与会话历史仅在对话页显示",
-  "url": "https://github.com/KingNuoNuo/WeKnoraApp/releases/download/v1.1.33/app-release.apk"
+  "version": "1.1.34",
+  "version_code": 36,
+  "notes": "修复对话图片加载；停止自动追加引用文档插图",
+  "url": "https://github.com/KingNuoNuo/WeKnoraApp/releases/download/v1.1.34/app-release.apk"
 }

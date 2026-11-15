@@ -81,6 +81,19 @@ fun resolveImageUrl(raw: String, base: String): String {
     // 这里直接判空，由渲染层跳过，不再产生无效请求
     if (url.endsWith("...") || url.endsWith("…")) return ""
     return when {
+        // 服务端公开地址 APP_EXTERNAL_URL/r/<token> 在手机网络下常不可达，
+        // 但 token 对应的路径可由当前已配置的 WeKnora 服务直接提供。
+        // 改用配置的 origin，可避免走公网域名/错误端口，同时由同源加载器带鉴权。
+        (url.startsWith("http://") || url.startsWith("https://")) &&
+            origin.isNotBlank() && runCatching {
+                val parsed = android.net.Uri.parse(url)
+                parsed.path.orEmpty().matches(Regex("""/r/[0-9A-Za-z_-]{8,}"""))
+            }.getOrDefault(false) -> {
+                val parsed = android.net.Uri.parse(url)
+                origin + parsed.encodedPath.orEmpty() +
+                    (parsed.encodedQuery?.let { "?$it" } ?: "") +
+                    (parsed.encodedFragment?.let { "#$it" } ?: "")
+            }
         url.startsWith("http://") || url.startsWith("https://") -> url
         // 知识库正文里的图：`resource://<handle>`。
         // 服务端有一个 /files 代理专门把这句柄换成字节，且认 X-API-Key

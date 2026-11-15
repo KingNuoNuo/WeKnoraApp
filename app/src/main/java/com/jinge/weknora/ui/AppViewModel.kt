@@ -892,11 +892,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     // 部分实现不发 complete 帧，兜底收尾
                     updateMessage(aid) { if (it.streaming) it.copy(streaming = false) else it }
                     if (frameImages.isNotEmpty()) {
+                        // 只展示本轮服务端实际返回的资源句柄。按 knowledge_id 扫整篇文档
+                        // 会把与当前回答无关的插图追加在气泡末尾。
                         updateMessage(aid) { it.copy(docImages = frameImages.take(6).toList()) }
                         Log.d("WeKnora", "docImages from frames: ${frameImages.size}")
-                    } else {
-                        // 帧里没图时，再按引用的文档补一次
-                        runCatching { loadDocImages(aid) }
                     }
                 } catch (e: CancellationException) {
                     // 用户点「停止生成」/ 切库 / 新会话导致的中断，不是错误：

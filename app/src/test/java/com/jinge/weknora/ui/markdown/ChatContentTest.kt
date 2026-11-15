@@ -7,6 +7,18 @@ import org.junit.Test
 class ChatContentTest {
     private val handle = "resource://real_image_handle_123456"
 
+    @Test fun publicResourceImageUsesConfiguredServerOrigin() {
+        assertEquals(
+            "http://192.168.1.20:8080/r/AbCdEfGh123?x=1",
+            resolveImageUrl("https://public.example.test/r/AbCdEfGh123?x=1", "http://192.168.1.20:8080/")
+        )
+    }
+
+    @Test fun ordinaryExternalImageKeepsItsOriginalUrl() {
+        val url = "https://cdn.example.test/manual.png"
+        assertEquals(url, resolveImageUrl(url, "http://192.168.1.20:8080"))
+    }
+
     @Test fun resourceImageStaysBetweenItsSurroundingParagraphs() {
         val answer = prepareAssistantContent("第一步\n\n![接线图]($handle)\n\n第二步")
         assertEquals(listOf(

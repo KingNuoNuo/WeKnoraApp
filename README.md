@@ -100,7 +100,7 @@ app/src/main/java/com/jinge/weknora/
 
 ## 更新日志
 
-见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **1.1.33**（versionCode 35）。
+见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **1.1.34**（versionCode 36）。
 
 ## 更新机制
 
