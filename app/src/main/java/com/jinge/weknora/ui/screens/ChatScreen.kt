@@ -77,9 +77,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
@@ -87,20 +85,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.SubcomposeAsyncImage
-import coil.imageLoader
-import coil.request.ImageRequest
 import com.jinge.weknora.data.Attachment
 import com.jinge.weknora.data.ChatMessage
 import com.jinge.weknora.data.ChatReference
 import com.jinge.weknora.data.REASONING_LEVELS
 import com.jinge.weknora.ui.AppViewModel
 import com.jinge.weknora.ui.markdown.ImageLightbox
-import com.jinge.weknora.ui.markdown.LocalApiBase
 import com.jinge.weknora.ui.markdown.MarkdownBody
-import com.jinge.weknora.ui.markdown.Markdown
 import com.jinge.weknora.ui.markdown.prepareAssistantContent
-import com.jinge.weknora.ui.markdown.resolveImageUrl
 
 /**
  * 对话页。
@@ -468,11 +460,6 @@ private fun MessageBubble(
         prepareAssistantContent(msg.content, msg.thinking, msg.referenceImages + msg.docImages)
     }
     val body = answer.body
-    val inlineImages = remember(body) { Markdown.imageUrls(body) }
-    val extraDocImages = msg.docImages.filterNot { it in inlineImages }
-    val extraReferenceImages = msg.referenceImages.filterNot {
-        it in inlineImages || it in extraDocImages
-    }
     // 圆角统一 16，只在「贴着自己那一侧」的下角收窄，指示方向
     val bubbleShape = if (isUser)
         RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp)
@@ -526,42 +513,7 @@ private fun MessageBubble(
                         MarkdownBody(body, onImageClick = onImageClick)
                     }
                 }
-                // 来源里的配图：正文没带图时，这些是「看得见知识库图片」的唯一入口。
-                // 单独加一行小标题 —— 否则缩略图紧跟在正文后面，会被当成回答内容的一部分
-                if (extraDocImages.isNotEmpty()) {
-                    Spacer(Modifier.height(10.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Filled.Image, null,
-                            Modifier.size(13.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            "  文档插图",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Spacer(Modifier.height(5.dp))
-                    ReferenceImages(extraDocImages, onOpen = onImageClick)
-                }
-                if (extraReferenceImages.isNotEmpty()) {
-                    Spacer(Modifier.height(10.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Filled.Image, null,
-                            Modifier.size(13.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            "  来源图片",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Spacer(Modifier.height(5.dp))
-                    ReferenceImages(extraReferenceImages, onOpen = onImageClick)
-                }
+                // 来源里的配图不再跟在气泡末尾：正文没画图就不给图。
                 if (msg.references.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
                     ReferenceList(msg.references)
@@ -983,59 +935,6 @@ private fun AttachedChip(att: Attachment, vm: AppViewModel) {
             ) {
                 Icon(Icons.Filled.Close, contentDescription = "移除", Modifier.size(14.dp))
             }
-        }
-    }
-}
-
-/**
- * 来源配图：横向一排缩略图，点开看大图。
- *
- * 图片来自 references 帧里 `image_*` 分块的 image_info（公有云 OSS 公网地址，
- * 或服务端按 `resource_urls=public` 换出来的临时 http 地址）。
- * 横向滚动而不是网格：手机上一屏塞两张、一眼能看出「还有更多」。
- */
-@Composable
-private fun ReferenceImages(urls: List<String>, onOpen: (String) -> Unit = {}) {
-    val base = LocalApiBase.current
-
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        urls.take(6).forEach { raw ->
-            val src = remember(raw, base) { resolveImageUrl(raw, base) }
-            if (src.isBlank()) return@forEach
-            SubcomposeAsyncImage(
-                model = ImageRequest.Builder(LocalContext.current)
-                    .data(src)
-                    .crossfade(true)
-                    .build(),
-                imageLoader = com.jinge.weknora.ui.markdown.LocalAppImageLoader.current
-                    ?: LocalContext.current.imageLoader,
-                contentDescription = "知识库图片",
-                contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    .size(width = 150.dp, height = 108.dp)
-                    .clip(MaterialTheme.shapes.small)
-                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                    .clickable { onOpen(src) },
-                loading = {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                    }
-                },
-                error = {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(
-                            "图片加载失败",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            )
         }
     }
 }

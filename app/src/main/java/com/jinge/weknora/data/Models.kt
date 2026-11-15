@@ -404,22 +404,22 @@ data class ChatMessage(
      * 还写「思考中…」会让用户以为卡死了。
      */
     val webSearch: Boolean = false,
-    /** 检索来源。回答正文之外还能看到「参考了哪几篇、有没有配图」 */
+    /** 检索来源。回答正文之外还能看到「参考了哪几篇」 */
     val references: List<ChatReference> = emptyList(),
     /**
-     * 从引用文档里补的插图（按引用位置就近取的资源句柄）。
+     * 从引用文档里补的资源句柄（按引用位置就近取）。
      *
-     * 模型经常不把图写进答案、或者写出来的句柄是编的；文档本身的分块里
-     * 图是真实存在的，所以回答落地后按 knowledge_id 去拉一次分块补图。
+     * **不再渲染成气泡末尾的插图区**：正文里没画图就不给图。
+     * 留着只当「完整句柄对照表」——模型常把 `resource://x4Pk...` 写成带
+     * 省略号的，正文里那张图就废了，靠这里的真句柄修回来。
      */
     val docImages: List<String> = emptyList()
 ) {
     /**
-     * 这条回答要显示的图片：来源里的图 + 正文 Markdown 里的图。
+     * 正文之外的参考图句柄。
      *
-     * 正文里的图由 Markdown 渲染器自己画（位置跟着段落走），这里只收来源图 ——
-     * 用户问「有没有架构图」时，即使模型只在正文里说「见下图」，
-     * 来源里的 image 分块也能把图顶到眼前。
+     * 同样不进渲染区，只作为 [docImages] 的补充参与截断句柄修复。
+     * 正文里的图由 Markdown 渲染器自己画，位置跟着段落走。
      */
     val referenceImages: List<String>
         get() = references.flatMap { it.imageUrls }.distinct()

@@ -944,8 +944,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     if (frameImages.isNotEmpty()) {
                         updateMessage(aid) { it.copy(docImages = frameImages.take(6).toList()) }
                         Log.d("WeKnora", "docImages from frames: ${frameImages.size}")
-                    } else {
-                        // 帧里没图时，再按引用的文档补一次
+                    } else if (needsHandleRepair(aid)) {
+                        // 气泡末尾不再挂图，这里抓分块只为核出**完整**的资源句柄：
+                        // 模型常把 `resource://x4Pk...` 写成带省略号的
+                        // `resource://x4Pk...`，正文里那张图就废了。
+                        // 正文没出现截断句柄时不必白跑一次 listChunks。
                         runCatching { loadDocImages(aid) }
                     }
                 } catch (e: CancellationException) {
@@ -971,12 +974,19 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** 正文里有没有被模型自己截断的资源句柄（`resource://xxxx...`）。 */
+    private fun needsHandleRepair(aid: String): Boolean {
+        val content = messages.firstOrNull { it.id == aid }?.content ?: return false
+        return content.contains("resource://") &&
+            (content.contains("...") || content.contains("…"))
+    }
+
     /**
      * 从被引用的文档里补插图。
      *
-     * 模型经常：「只写了文字，没把图写进答案」或「写出来的句柄是编的」。
-     * 但文档分块里 `resource://` 图是真实存在的，所以回答落地后按
-     * knowledge_id 拉一次分块，取引用位置附近、最多 6 张。
+     * 只在 [needsHandleRepair] 为真时调用：拿分块里存的**完整**句柄，
+     * 去修正文里被写成省略号的那些。结果不渲染成插图区，只给
+     * [com.jinge.weknora.data.ReferenceParser.repairTruncatedImageUrls] 当对照表。
      */
     private suspend fun loadDocImages(aid: String) {
         val msg = messages.firstOrNull { it.id == aid } ?: return
@@ -995,7 +1005,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         } else {
             found.sortedBy { it.first }
         }
-        val images = ordered.flatMap { it.second }.distinct().take(6)
+        // 只当句柄对照表用，不限 6 张：正文引用的图可能落在离 chunk_index 较远的块里，
+        // 取少了就修不回来。多存几十个短字符串没有成本。
+        val images = ordered.flatMap { it.second }.distinct().take(24)
         if (images.isNotEmpty()) {
             updateMessage(aid) { it.copy(docImages = images) }
             Log.d("WeKnora", "docImages: ${images.size} from ${ref.knowledgeId.take(8)}")

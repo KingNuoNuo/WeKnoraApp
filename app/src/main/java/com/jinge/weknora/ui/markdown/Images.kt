@@ -14,12 +14,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
@@ -65,6 +67,18 @@ val LocalApiBase = staticCompositionLocalOf { "" }
 val LocalAppImageLoader = staticCompositionLocalOf<coil.ImageLoader?> { null }
 
 /**
+ * 图片加载用的网络客户端（已带同源鉴权与网络切换重解析）。
+ *
+ * 只在**图片解码失败**时用到：回答正文里可能嵌的不是图片 —— 智能体整理完 PDF
+ * 之后会用 `![标题](resource://句柄)` 引用它，服务端如实返回
+ * `application/pdf`，Coil 解不出来。这时探一下真实类型，改成文档卡片。
+ */
+val LocalApiHttpClient = staticCompositionLocalOf<okhttp3.OkHttpClient?> { null }
+
+/** 下载鉴权头。交给内置阅读器打开文档时要用，和接口请求用的是同一套。 */
+val LocalApiAuthHeaders = staticCompositionLocalOf<Map<String, String>> { emptyMap() }
+
+/**
  * 把图片地址补成可加载的绝对地址。
  *
  * 三种来源：
@@ -91,6 +105,93 @@ fun resolveImageUrl(raw: String, base: String): String {
         url.startsWith("/") && origin.isNotBlank() -> origin + url
         else -> url
     }
+}
+
+/** 探测到的远端文件类型。`size` 单位字节，拿不到时为 0。 */
+private data class RemoteFile(val mime: String, val size: Long) {
+    /** 能被 Coil 直接显示的才算图片。 */
+    val isImage: Boolean get() = mime.startsWith("image/")
+}
+
+/**
+ * 探测结果的进程内缓存。
+ *
+ * LazyColumn 滚出屏幕再滚回来会重建 item，`remember` 保不住；
+ * 同一个句柄在同一屏里也常常出现多次（正文提到 + 图片区都引用它）。
+ * 没有这层缓存，每滚一次就多一次网络往返。
+ *
+ * 资源句柄指向的是不可变对象，缓存不会过期。
+ */
+private object ProbeCache {
+    private val hits = android.util.LruCache<String, RemoteFile>(64)
+    private val misses = java.util.Collections.newSetFromMap(
+        java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+    )
+
+    fun find(url: String): RemoteFile? = hits.get(url)
+
+    /** 之前探过且失败 —— 不要再试一遍。 */
+    fun knownMiss(url: String): Boolean = misses.contains(url)
+
+    fun put(url: String, value: RemoteFile?) {
+        if (value == null) misses.add(url) else hits.put(url, value)
+    }
+}
+
+/**
+ * 探地址背后到底是什么类型。
+ *
+ * 不用 HEAD：服务端（nginx 后面只挂了 GET）对 HEAD 直接回 404。
+ * 改用 `Range: bytes=0-0` —— 只下 1 个字节，响应头里带着 Content-Type，
+ * 真实大小在 `Content-Range: bytes 0-0/627770` 里。
+ *
+ * 任何失败都返回 null，调用方按「普通图片加载失败」处理，不再叠加新错误。
+ */
+private fun probeRemoteFile(client: okhttp3.OkHttpClient?, url: String): RemoteFile? {
+    if (client == null || url.isBlank()) return null
+    ProbeCache.find(url)?.let { return it }
+    if (ProbeCache.knownMiss(url)) return null
+    // 探测只为拿响应头，别让共用的 60 秒读超时把占位框转成转圈地狱
+    val quick = client.newBuilder()
+        .callTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
+    val probed = runCatching {
+        val request = okhttp3.Request.Builder()
+            .url(url)
+            .header("Range", "bytes=0-0")
+            .build()
+        quick.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) return@use null
+            val mime = response.header("Content-Type").orEmpty()
+                .substringBefore(';').trim().lowercase()
+            val total = response.header("Content-Range")?.substringAfterLast('/')?.toLongOrNull()
+                ?: response.header("Content-Length")?.toLongOrNull()
+                ?: 0L
+            RemoteFile(mime.ifBlank { "application/octet-stream" }, total)
+        }
+    }.getOrNull()
+    ProbeCache.put(url, probed)
+    return probed
+}
+
+/** 给人看的体积：613 KB / 1.2 MB。 */
+private fun formatSize(bytes: Long): String = when {
+    bytes <= 0L -> ""
+    bytes < 1024L -> "$bytes B"
+    bytes < 1024L * 1024L -> "${(bytes + 1023) / 1024} KB"
+    else -> String.format("%.1f MB", bytes / 1024.0 / 1024.0)
+}
+
+/** mime 到内置阅读器 `format` 参数的映射，认不出就返回 null。 */
+private fun readerFormatOf(mime: String): String? = when {
+    mime == "application/pdf" -> "pdf"
+    mime.startsWith("image/") -> "image"
+    mime.startsWith("text/") -> "text"
+    mime.contains("wordprocessingml") -> "docx"
+    mime.contains("presentationml") -> "pptx"
+    mime.contains("html") -> "html"
+    mime.contains("json") || mime.contains("xml") -> "text"
+    else -> null
 }
 
 /**
@@ -131,8 +232,138 @@ fun MarkdownImage(
                 CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
             }
         },
-        error = { BrokenImage(src) }
+        error = { ImageFallback(src, alt) }
     )
+}
+
+/**
+ * 图片加载失败之后的「分诊」。
+ *
+ * Coil 失败有两种完全不同的原因，不该给同一个表情：
+ *  - **真的取不到**（断网、401、404、图挂了）→ 维持原来的「加载失败 + 域名」
+ *  - **取到了但不是图片**（最常见的是 PDF：智能体整理完文档后用
+ *    `![标题](resource://句柄)` 引用它，服务端如实回 `application/pdf`）
+ *    → 换成文档卡片，点一下用内置阅读器打开
+ *
+ * 探测只在失败时发生，正常显示的图零开销；一屏里同一条消息重绘会走
+ * `remember(src)` 缓存，不会反复请求。
+ */
+@Composable
+private fun ImageFallback(src: String, alt: String) {
+    val client = LocalApiHttpClient.current
+    val headers = LocalApiAuthHeaders.current
+    val context = LocalContext.current
+    var probed by remember(src) { mutableStateOf(false) }
+    var file by remember(src) { mutableStateOf<RemoteFile?>(null) }
+
+    LaunchedEffect(src, client) {
+        file = withContext(Dispatchers.IO) { probeRemoteFile(client, src) }
+        probed = true
+    }
+
+    val remote = file
+    when {
+        // 探测还没回来：先占住位置，别先闪一下「加载失败」再变成文档卡片
+        !probed -> ProbePlaceholder()
+        remote != null && !remote.isImage -> {
+            val doc = remote
+            DocumentCard(
+                title = alt.ifBlank { "文档" },
+                remote = doc,
+                onOpen = { openDocument(context, src, alt, doc, headers) }
+            )
+        }
+        else -> BrokenImage(src)
+    }
+}
+
+/** 探测期间的中性占位，样式与图片加载中一致。 */
+@Composable
+private fun ProbePlaceholder() {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 96.dp, max = 420.dp)
+            .clip(MaterialTheme.shapes.medium)
+            .background(MaterialTheme.colorScheme.surfaceContainerLow),
+        contentAlignment = Alignment.Center
+    ) {
+        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+    }
+}
+
+/**
+ * 文档卡片：回答里嵌了非图片资源时，用它替掉「加载失败」。
+ *
+ * 标题取 markdown 的 alt —— 智能体一般会把文档名写在那里，
+ * 比句柄可读得多；没写就退化成「文档」。
+ */
+@Composable
+private fun DocumentCard(title: String, remote: RemoteFile, onOpen: () -> Unit) {
+    val secondary = listOf(
+        readerFormatOf(remote.mime)?.uppercase() ?: remote.mime,
+        formatSize(remote.size)
+    ).filter { it.isNotBlank() }.joinToString(" · ")
+
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = MaterialTheme.shapes.medium,
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen)
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Icon(
+                Icons.Filled.Description,
+                null,
+                Modifier.size(22.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    secondary.ifBlank { "点击打开" },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+/** 用内置阅读器打开——PDF 走 NativePdfActivity，其余交给 DocumentReaderActivity 分流。 */
+private fun openDocument(
+    context: android.content.Context,
+    src: String,
+    title: String,
+    remote: RemoteFile,
+    headers: Map<String, String>
+) {
+    val format = readerFormatOf(remote.mime)
+    if (format == null) {
+        Toast.makeText(context, "暂不支持预览这种文件（${remote.mime}）", Toast.LENGTH_SHORT).show()
+        return
+    }
+    val bundle = android.os.Bundle().apply { headers.forEach { (k, v) -> putString(k, v) } }
+    runCatching {
+        context.startActivity(
+            android.content.Intent(context, com.jinge.weknora.DocumentReaderActivity::class.java)
+                .putExtra("url", src)
+                .putExtra("title", title.ifBlank { "文档" })
+                .putExtra("format", format)
+                .putExtra("headers", bundle)
+        )
+    }.onFailure {
+        Toast.makeText(context, "打不开这个文件：${it.message ?: "未知错误"}", Toast.LENGTH_SHORT).show()
+    }
 }
 
 @Composable

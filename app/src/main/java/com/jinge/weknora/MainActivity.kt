@@ -85,6 +85,8 @@ import com.jinge.weknora.data.Session
 import com.jinge.weknora.data.WeKnoraApi
 import com.jinge.weknora.ui.AppViewModel
 import com.jinge.weknora.ui.markdown.LocalApiBase
+import com.jinge.weknora.ui.markdown.LocalApiAuthHeaders
+import com.jinge.weknora.ui.markdown.LocalApiHttpClient
 import com.jinge.weknora.ui.markdown.LocalAppImageLoader
 import com.jinge.weknora.ui.screens.ArtifactsScreen
 import com.jinge.weknora.ui.screens.ChatScreen
@@ -140,9 +142,11 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
     // 需要经服务端 `/files` 代理取字节（实测 API Key 可通行）。
     // 只对“服务端同源”的请求加头 —— 外链图（比如公网 OSS）绝不能带上 key。
     val auth = remember(base, vm.accountEmail, vm.tenantIdInput, vm.configured) { vm.authHeaders() }
-    val imageLoader = remember(base, auth) {
+    // 同一个 client 既喂 Coil、也供图片解码失败时的类型探测用 ——
+    // 鉴权头只加给同源请求，探测走的也是这条路
+    val mediaClient = remember(base, auth) {
         val serverHost = runCatching { java.net.URI(base).host }.getOrNull()
-        val client = okhttp3.OkHttpClient.Builder()
+        okhttp3.OkHttpClient.Builder()
             .addInterceptor { chain ->
                 val req = chain.request()
                 val sameOrigin = serverHost != null && req.url.host.equals(serverHost, ignoreCase = true)
@@ -156,8 +160,10 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
             }
             .build()
             .let(WeKnoraApi::networkAware)
+    }
+    val imageLoader = remember(mediaClient) {
         coil.ImageLoader.Builder(ctx)
-            .okHttpClient(client)
+            .okHttpClient(mediaClient)
             .crossfade(true)
             .build()
     }
@@ -169,7 +175,9 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
     }
     CompositionLocalProvider(
         LocalApiBase provides base,
-        LocalAppImageLoader provides imageLoader
+        LocalAppImageLoader provides imageLoader,
+        LocalApiHttpClient provides mediaClient,
+        LocalApiAuthHeaders provides auth
     ) {
         // 未配置时只显示配置页。错误/结果由 SetupScreen 自己以卡片常驻显示 ——
         // 这里不能再挂一个 LaunchedEffect 去 consume，否则提示会闪一下就没了。
