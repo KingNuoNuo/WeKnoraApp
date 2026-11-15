@@ -125,16 +125,29 @@ jobs:
       # 直接比证书指纹，确保发出去的每个版本都是同一把钥匙。
       - name: Verify release certificate
         run: |
-          set -euo pipefail
+          # 这里刻意不开 pipefail：find | sort | tail 在 pipefail 下会因 sort 吃到
+          # SIGPIPE 而让整步提前失败，连 apksigner 都还没跑起来。
+          set -eu
           APK=app/build/outputs/apk/release/app-release.apk
-          APKSIGNER=$(find "${ANDROID_HOME}/build-tools" -name apksigner -type f | sort -V | tail -1)
-          INFO=$("$APKSIGNER" verify --print-certs "$APK")
-          echo "$INFO" | grep -E 'Signer #1 certificate (DN|SHA-256 digest)'
-          ACTUAL=$(echo "$INFO" | sed -n 's/.*Signer #1 certificate SHA-256 digest: \([0-9a-fA-F]*\).*/\1/p' | head -1 | tr 'A-F' 'a-f')
+          # Install SDK 那步明确装了 36.0.0，先用固定路径；缺失时才回退去 find
+          APKSIGNER="${ANDROID_HOME}/build-tools/36.0.0/apksigner"
+          if [ ! -x "$APKSIGNER" ]; then
+            APKSIGNER=$(find "${ANDROID_HOME}/build-tools" -name apksigner -type f | sort -V | tail -1)
+          fi
+          echo "apksigner: ${APKSIGNER}"
+          if [ -z "$APKSIGNER" ]; then
+            echo "::error::没找到 apksigner，请检查 build-tools 是否安装"
+            exit 1
+          fi
+          "$APKSIGNER" verify --print-certs "$APK" > certs.txt
+          cat certs.txt
+          # 兼容指纹带不带冒号分隔：取冒号后内容，只保留 hex 字符
+          ACTUAL=$(sed -n 's/.*SHA-256 digest: //p' certs.txt | head -1 | tr -cd '0-9a-fA-F' | tr 'A-F' 'a-f')
           # signing/release.jks 的证书指纹（2026-11-15 生成）。换 keystore 时必须同步改这里。
           EXPECTED=462c41a36e26bdcbfc0531451539d42d4c966cced10290687f47ebe8ef9dace5
+          echo "证书指纹：${ACTUAL:-空}"
           if [ "$ACTUAL" != "$EXPECTED" ]; then
-            echo "::error::APK 证书指纹不匹配（实际 ${ACTUAL:-空}），可能 Secret 缺失导致退回了 debug 签名"
+            echo "::error::APK 证书指纹不匹配（期望 ${EXPECTED}），可能 Secret 缺失导致退回了 debug 签名"
             exit 1
           fi
           echo "签名证书固定：${ACTUAL}"
